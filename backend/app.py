@@ -1,3 +1,33 @@
+"""
+HB-Staffing API - Flask application for construction project staffing management
+
+This is the main entry point for the HB-Staffing web application backend.
+It provides RESTful API endpoints for managing staff, projects, assignments,
+forecasting, and reporting.
+
+Features:
+- JWT-based authentication with role-based access control
+- Complete CRUD operations for staff, projects, and assignments
+- Advanced forecasting engine for staffing needs prediction
+- Comprehensive reporting with CSV/PDF export
+- Rate limiting and security headers
+- Docker containerization support
+- PostgreSQL database with migration support
+
+Environment Variables:
+- FLASK_ENV: development/production
+- DATABASE_URL: Database connection string
+- SECRET_KEY: Flask secret key
+- JWT_SECRET_KEY: JWT signing key
+- CORS_ORIGINS: Allowed CORS origins
+
+Usage:
+    python app.py
+
+Or with Gunicorn (production):
+    gunicorn app:create_app() --bind 0.0.0.0:8000
+"""
+
 from flask import Flask, jsonify, current_app, request
 from flask_cors import CORS
 from flask_limiter import Limiter
