@@ -83,7 +83,7 @@ export const dateRange = (startDate, endDate, startFieldName = 'Start date', end
   return null;
 };
 
-// Validate skills array
+// Validate skills array (optional - empty array is valid)
 export const skillsArray = (skills) => {
   if (!skills) return null;
 
@@ -91,8 +91,9 @@ export const skillsArray = (skills) => {
     return 'Skills must be a list';
   }
 
+  // Empty array is valid - skills are optional
   if (skills.length === 0) {
-    return 'At least one skill is required';
+    return null;
   }
 
   // Check for duplicates
@@ -123,13 +124,25 @@ export const projectStatus = (status) => {
   return null;
 };
 
-// Validate staff role
+// Validate staff role (legacy - for text input)
 export const staffRole = (role) => {
   if (!role || role.trim().length < 2) {
     return 'Role must be at least 2 characters long';
   }
   if (role.length > 100) {
     return 'Role must be no more than 100 characters long';
+  }
+  return null;
+};
+
+// Validate staff role_id (for dropdown selection)
+export const staffRoleId = (value, fieldName = 'Role') => {
+  if (!value || value === '' || value === 0) {
+    return `${fieldName} is required`;
+  }
+  const numValue = Number(value);
+  if (isNaN(numValue) || numValue <= 0) {
+    return `Please select a valid ${fieldName.toLowerCase()}`;
   }
   return null;
 };
@@ -166,8 +179,8 @@ export const validateForm = (formData, validationRules) => {
 // Validation rules for each form
 export const staffValidationRules = {
   name: [required],
-  role: [required, staffRole],
-  hourly_rate: [required, positiveNumber],
+  role_id: [staffRoleId],
+  internal_hourly_cost: [required, positiveNumber],
   availability_start: [dateFormat],
   availability_end: [dateFormat],
   skills: [skillsArray]
@@ -187,6 +200,18 @@ export const assignmentValidationRules = {
   start_date: [required, dateFormat],
   end_date: [required, dateFormat],
   hours_per_week: [required, hoursPerWeek]
+};
+
+// Optional positive number validation (for fields that can be null/empty)
+export const optionalPositiveNumber = (value, fieldName) => {
+  if (value === null || value === undefined || value === '') return null;
+  return positiveNumber(value, fieldName);
+};
+
+export const roleValidationRules = {
+  name: [required],
+  hourly_cost: [required, positiveNumber],
+  default_billable_rate: [optionalPositiveNumber]
 };
 
 // Cross-field validation
@@ -241,6 +266,21 @@ export const validateAssignmentForm = (formData) => {
     );
     if (dateRangeError) {
       errors.end_date = dateRangeError;
+    }
+  }
+
+  return errors;
+};
+
+export const validateRoleForm = (formData) => {
+  const errors = validateForm(formData, roleValidationRules);
+
+  // Additional business logic: default_billable_rate should typically be higher than hourly_cost
+  if (formData.hourly_cost && formData.default_billable_rate) {
+    const cost = Number(formData.hourly_cost);
+    const rate = Number(formData.default_billable_rate);
+    if (!isNaN(cost) && !isNaN(rate) && rate < cost) {
+      errors.default_billable_rate = 'Warning: Default billable rate is lower than internal cost';
     }
   }
 

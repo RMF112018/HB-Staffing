@@ -62,8 +62,243 @@
   margin: 0;
 }
 
-.assignment-table {
+/* Table Container */
+.assignment-table-container {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  overflow-x: auto;
   margin-bottom: 2rem;
+}
+
+.assignment-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 900px;
+}
+
+.assignment-table th {
+  background: #f8f9fa;
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #2c3e50;
+  border-bottom: 2px solid #ecf0f1;
+  white-space: nowrap;
+}
+
+.assignment-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #ecf0f1;
+  vertical-align: middle;
+}
+
+.assignment-table tr:last-child td {
+  border-bottom: none;
+}
+
+.assignment-table tr:hover {
+  background: #fafafa;
+}
+
+/* Table Cell Styles */
+.staff-name {
+  font-weight: 500;
+  color: #2c3e50;
+}
+
+.project-info {
+  max-width: 200px;
+}
+
+.project-path {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #3498db;
+}
+
+.role-name {
+  color: #555;
+}
+
+.dates {
+  white-space: nowrap;
+}
+
+.date {
+  font-size: 0.9rem;
+}
+
+.date-separator {
+  margin: 0 0.25rem;
+  color: #bdc3c7;
+}
+
+.hours {
+  text-align: center;
+  font-weight: 500;
+}
+
+.billable-rate {
+  white-space: nowrap;
+}
+
+.billable-rate .rate {
+  font-weight: 600;
+  color: #27ae60;
+  font-family: 'Monaco', 'Consolas', monospace;
+}
+
+.rate-source {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  margin-left: 0.5rem;
+  text-transform: uppercase;
+}
+
+.rate-source-project {
+  background: #d5f5e3;
+  color: #27ae60;
+}
+
+.rate-source-inherited {
+  background: #ecf0f1;
+  color: #7f8c8d;
+}
+
+.rate-source-staff {
+  background: #e8f4fd;
+  color: #3498db;
+}
+
+.no-rate, .no-cost {
+  color: #bdc3c7;
+}
+
+.estimated-cost .cost {
+  font-weight: 600;
+  color: #2c3e50;
+  font-family: 'Monaco', 'Consolas', monospace;
+}
+
+/* Allocation Info Styles */
+.allocation-info {
+  white-space: nowrap;
+}
+
+.allocation-type {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  font-weight: 600;
+  display: inline-block;
+  margin-right: 0.5rem;
+}
+
+.allocation-full {
+  background: #d5f5e3;
+  color: #27ae60;
+}
+
+.allocation-split {
+  background: #fdebd0;
+  color: #f39c12;
+}
+
+.allocation-percentage {
+  background: #e8f4fd;
+  color: #3498db;
+}
+
+.allocation-monthly {
+  background: #fadbd8;
+  color: #e74c3c;
+}
+
+.effective-allocation {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 0.95rem;
+}
+
+/* Cost Info Styles */
+.cost-info {
+  min-width: 140px;
+}
+
+.cost-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.15rem 0;
+}
+
+.cost-label {
+  font-size: 0.75rem;
+  color: #7f8c8d;
+  text-transform: uppercase;
+}
+
+.cost-info .cost {
+  font-weight: 600;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 0.85rem;
+}
+
+.allocated-cost {
+  color: #2c3e50;
+}
+
+.internal-cost {
+  color: #e67e22;
+}
+
+.margin-row {
+  border-top: 1px solid #ecf0f1;
+  margin-top: 0.25rem;
+  padding-top: 0.25rem;
+}
+
+.margin-cost {
+  color: #27ae60;
+}
+
+.actions {
+  white-space: nowrap;
+}
+
+.actions .btn-secondary,
+.actions .btn-danger {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  text-decoration: none;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+  margin-right: 0.5rem;
+  transition: background-color 0.2s ease;
+}
+
+.actions .btn-secondary {
+  background: #ecf0f1;
+  color: #2c3e50;
+}
+
+.actions .btn-secondary:hover {
+  background: #bdc3c7;
+}
+
+.actions .btn-danger {
+  background: #e74c3c;
+  color: white;
+}
+
+.actions .btn-danger:hover {
+  background: #c0392b;
 }
 
 .assignment-breakdown {

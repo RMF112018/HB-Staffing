@@ -1,168 +1,183 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { projectAPI } from '../services/api';
-import DataTable from './common/DataTable';
-import LoadingSpinner from './common/LoadingSpinner';
-import ErrorMessage from './common/ErrorMessage';
+import { useApiError } from '../hooks/useApiError';
+import { useLoading } from '../contexts/LoadingContext';
+import SkeletonLoader from './common/SkeletonLoader';
 import './ProjectList.css';
 
 const ProjectList = () => {
-  const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { error, handleError, clearError } = useApiError();
+  const { startLoading, stopLoading, isLoading } = useLoading();
 
   useEffect(() => {
-    loadProjects();
+    fetchProjects();
   }, []);
 
-  const loadProjects = async () => {
+  const fetchProjects = async () => {
+    startLoading('projects');
+    clearError();
+
     try {
-      setLoading(true);
-      setError(null);
-      const response = await projectAPI.getAll();
+      // Get top-level projects only (no sub-projects in main list)
+      const response = await projectAPI.getTopLevel();
       setProjects(response.data);
     } catch (err) {
-      console.error('Error loading projects:', err);
-      setError('Failed to load projects');
+      handleError(err);
     } finally {
-      setLoading(false);
+      stopLoading('projects');
     }
   };
 
-  const handleEdit = (project) => {
-    navigate(`/projects/${project.id}/edit`);
-  };
+  const handleDelete = async (id, e) => {
+    e.stopPropagation();
+    if (!window.confirm('Are you sure you want to delete this project?')) {
+      return;
+    }
 
-  const handleDelete = async (project) => {
-    if (window.confirm(`Are you sure you want to delete "${project.name}"?`)) {
-      try {
-        await projectAPI.delete(project.id);
-        setProjects(prev => prev.filter(p => p.id !== project.id));
-      } catch (err) {
-        console.error('Error deleting project:', err);
-        setError('Failed to delete project');
-      }
+    try {
+      await projectAPI.delete(id);
+      setProjects(prevProjects => prevProjects.filter(p => p.id !== id));
+    } catch (err) {
+      const message = err.response?.data?.error?.message || 'Failed to delete project';
+      alert(message);
     }
   };
 
-  const handleViewForecast = (project) => {
-    navigate(`/forecasts?project=${project.id}`);
-  };
-
-  const handleCreateNew = () => {
-    navigate('/projects/new');
-  };
-
-  const getStatusBadge = (status) => {
-    const statusClasses = {
-      planning: 'status-planning',
-      active: 'status-active',
-      completed: 'status-completed',
-      cancelled: 'status-cancelled',
+  const getStatusClass = (status) => {
+    const statusMap = {
+      'planning': 'status-planning',
+      'active': 'status-active',
+      'completed': 'status-completed',
+      'cancelled': 'status-cancelled',
       'on-hold': 'status-on-hold'
     };
+    return statusMap[status] || 'status-default';
+  };
 
+  const renderProjectCard = (project) => {
+    const isFolder = project.is_folder;
+    const hasChildren = project.sub_projects_count > 0;
+    
     return (
-      <span className={`status-badge ${statusClasses[status] || 'status-default'}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </span>
+      <div key={project.id} className="project-tree-item">
+        <div className={`project-card ${isFolder ? 'folder' : 'standalone'}`}>
+          <div className="project-card-header">
+            <span className="project-icon">
+              {isFolder ? '📁' : '📄'}
+            </span>
+            <h3 className="project-name">{project.name}</h3>
+            {isFolder && project.sub_projects_count > 0 && (
+              <span className="sub-count">({project.sub_projects_count} sub-projects)</span>
+            )}
+          </div>
+          
+          <div className="project-card-body">
+            <p>
+              <strong>Status:</strong>{' '}
+              <span className={`status-badge ${getStatusClass(project.status)}`}>
+                {project.status}
+              </span>
+            </p>
+            {project.start_date && <p><strong>Start:</strong> {project.start_date}</p>}
+            {project.end_date && <p><strong>End:</strong> {project.end_date}</p>}
+            {project.budget && <p><strong>Budget:</strong> ${project.budget.toLocaleString()}</p>}
+            {project.location && <p><strong>Location:</strong> {project.location}</p>}
+          </div>
+          
+          <div className="project-actions">
+            <Link to={`/projects/${project.id}`} className="btn-primary">View</Link>
+            <Link to={`/projects/${project.id}/edit`} className="btn-secondary">Edit</Link>
+            <Link to={`/projects/${project.id}/rates`} className="btn-secondary">Rates</Link>
+            <button 
+              className="btn-danger" 
+              onClick={(e) => handleDelete(project.id, e)}
+              disabled={hasChildren}
+              title={hasChildren ? 'Delete sub-projects first' : 'Delete project'}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
     );
   };
 
-  const columns = [
-    {
-      key: 'name',
-      label: 'Project Name',
-      sortable: true
-    },
-    {
-      key: 'status',
-      label: 'Status',
-      sortable: true,
-      render: (status) => getStatusBadge(status)
-    },
-    {
-      key: 'location',
-      label: 'Location',
-      sortable: true
-    },
-    {
-      key: 'start_date',
-      label: 'Start Date',
-      sortable: true,
-      type: 'date'
-    },
-    {
-      key: 'end_date',
-      label: 'End Date',
-      sortable: true,
-      type: 'date'
-    },
-    {
-      key: 'budget',
-      label: 'Budget',
-      sortable: true,
-      type: 'currency',
-      align: 'right'
-    }
-  ];
-
-  const activeProjects = projects.filter(p => p.status === 'active' || p.status === 'planning');
-  const completedProjects = projects.filter(p => p.status === 'completed');
-
-  if (loading) {
-    return <LoadingSpinner message="Loading projects..." />;
+  if (isLoading('projects')) {
+    return (
+      <div className="project-list">
+        <div className="header">
+          <h1>Project Management</h1>
+          <SkeletonLoader />
+        </div>
+        <div className="project-tree">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="project-card">
+              <SkeletonLoader />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
+
+  if (error) {
+    return (
+      <div className="project-list">
+        <h1>Project Management</h1>
+        <div className="error-message">
+          <p>Failed to load projects: {error.message}</p>
+          <button onClick={fetchProjects}>Retry</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Separate folders and standalone projects
+  const folders = projects.filter(p => p.is_folder);
+  const standaloneProjects = projects.filter(p => !p.is_folder);
 
   return (
     <div className="project-list">
-      <div className="list-header">
-        <h1>Projects</h1>
-        <button onClick={handleCreateNew} className="create-button">
-          Create Project
-        </button>
+      <div className="header">
+        <h1>Project Management</h1>
+        <div className="header-actions">
+          <Link to="/projects/new?type=folder" className="btn-primary">Create Folder</Link>
+          <Link to="/projects/new" className="btn-primary">Create Project</Link>
+        </div>
       </div>
 
-      {error && (
-        <ErrorMessage
-          message={error}
-          onRetry={loadProjects}
-        />
+      {/* Project Folders Section */}
+      {folders.length > 0 && (
+        <div className="project-section">
+          <h2 className="section-title">📁 Project Folders</h2>
+          <p className="section-subtitle">Click "View" to see sub-projects and assign staff</p>
+          <div className="project-tree">
+            {folders.map(project => renderProjectCard(project))}
+          </div>
+        </div>
       )}
 
-      <div className="project-stats">
-        <div className="stat-card">
-          <h3>Total Projects</h3>
-          <div className="stat-value">{projects.length}</div>
+      {/* Standalone Projects Section */}
+      {standaloneProjects.length > 0 && (
+        <div className="project-section">
+          <h2 className="section-title">📄 Standalone Projects</h2>
+          <div className="project-tree">
+            {standaloneProjects.map(project => renderProjectCard(project))}
+          </div>
         </div>
-        <div className="stat-card">
-          <h3>Active Projects</h3>
-          <div className="stat-value">{activeProjects.length}</div>
-        </div>
-        <div className="stat-card">
-          <h3>Completed Projects</h3>
-          <div className="stat-value">{completedProjects.length}</div>
-        </div>
-      </div>
+      )}
 
-      <DataTable
-        columns={columns}
-        data={projects}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        onView={handleViewForecast}
-        loading={loading}
-        emptyMessage="No projects found"
-        searchPlaceholder="Search projects..."
-        className="project-table"
-      />
-
-      <div className="project-actions">
-        <button onClick={() => navigate('/forecasts')} className="forecast-button">
-          View All Forecasts
-        </button>
-      </div>
+      {projects.length === 0 && (
+        <div className="empty-state">
+          <p>No projects found.</p>
+          <p>
+            <Link to="/projects/new?type=folder">Create a project folder</Link> to organize your projects, or{' '}
+            <Link to="/projects/new">create a standalone project</Link>.
+          </p>
+        </div>
+      )}
     </div>
   );
 };

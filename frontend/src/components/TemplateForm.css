@@ -1,0 +1,334 @@
+.template-form {
+  padding: 2rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.template-form h1 {
+  margin: 0 0 1rem 0;
+  color: var(--text-primary);
+}
+
+.template-form .form-info {
+  background: var(--info-bg);
+  border-left: 4px solid var(--primary-color);
+  padding: 1rem;
+  margin-bottom: 2rem;
+  border-radius: 0 8px 8px 0;
+}
+
+.template-form .form-info p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.template-form .error-message {
+  background: var(--error-bg);
+  color: var(--error-text);
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.template-form .form-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.template-form .form-section h2 {
+  margin: 0 0 1.5rem 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.template-form .section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.template-form .section-header h2 {
+  margin: 0;
+  border: none;
+  padding: 0;
+}
+
+.template-form .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.template-form .form-group {
+  margin-bottom: 1.25rem;
+}
+
+.template-form .form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.template-form .form-group input,
+.template-form .form-group select,
+.template-form .form-group textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 1rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.template-form .form-group input:focus,
+.template-form .form-group select:focus,
+.template-form .form-group textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.template-form .form-group input.error,
+.template-form .form-group select.error {
+  border-color: var(--danger-color);
+}
+
+.template-form .field-error {
+  display: block;
+  color: var(--danger-color);
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.template-form .field-hint {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.template-form .checkbox-group {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.template-form .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.template-form .checkbox-label input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.template-form .checkbox-text {
+  font-weight: 500;
+}
+
+/* Roles Section */
+.template-form .empty-roles {
+  text-align: center;
+  padding: 2rem;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  border: 2px dashed var(--border-color);
+}
+
+.template-form .empty-roles p {
+  color: var(--text-secondary);
+  margin: 0 0 1rem 0;
+}
+
+.template-form .roles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.template-form .role-item {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.template-form .role-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.template-form .role-number {
+  font-weight: 600;
+  color: var(--primary-color);
+  font-size: 0.9rem;
+}
+
+.template-form .btn-remove {
+  background: transparent;
+  border: none;
+  color: var(--danger-color);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.template-form .btn-remove:hover {
+  opacity: 1;
+}
+
+.template-form .role-fields {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.template-form .role-fields .form-group {
+  margin-bottom: 0;
+}
+
+.template-form .role-fields .form-group.small input {
+  text-align: center;
+}
+
+.template-form .role-fields .form-group label {
+  font-size: 0.8rem;
+  margin-bottom: 0.25rem;
+}
+
+.template-form .role-summary {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Template Summary */
+.template-form .template-summary {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.template-form .template-summary h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.template-form .summary-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+
+.template-form .summary-stat {
+  text-align: center;
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+}
+
+.template-form .summary-stat .stat-value {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.template-form .summary-stat .stat-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  margin-top: 0.25rem;
+}
+
+/* Form Actions */
+.template-form .form-actions {
+  display: flex;
+  gap: 1rem;
+  padding-top: 1rem;
+}
+
+.template-form .btn-primary,
+.template-form .btn-secondary {
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.template-form .btn-primary {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+}
+
+.template-form .btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.template-form .btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.template-form .btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.template-form .btn-secondary:hover {
+  background: var(--bg-primary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .template-form {
+    padding: 1rem;
+  }
+
+  .template-form .form-row {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .template-form .role-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .template-form .summary-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+

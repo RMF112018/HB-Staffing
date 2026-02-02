@@ -1,53 +1,25 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import './NavBar.css';
+import { Link } from 'react-router-dom';
+// import './NavBar.css';
 
 const NavBar = () => {
-  const location = useLocation();
-
-  const isActive = (path) => {
-    return location.pathname === path ? 'active' : '';
-  };
-
   return (
-    <nav className="navbar">
-      <div className="navbar-brand">
-        <Link to="/" className="brand-link">
+    <nav style={{ background: '#333', color: 'white', padding: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Link to="/" style={{ color: 'white', textDecoration: 'none', fontSize: '1.5rem', fontWeight: 'bold' }}>
           HB-Staffing
         </Link>
+        <ul style={{ display: 'flex', listStyle: 'none', margin: 0, padding: 0, gap: '2rem' }}>
+          <li><Link to="/" style={{ color: 'white', textDecoration: 'none' }}>Dashboard</Link></li>
+          <li><Link to="/roles" style={{ color: 'white', textDecoration: 'none' }}>Roles</Link></li>
+          <li><Link to="/templates" style={{ color: 'white', textDecoration: 'none' }}>Templates</Link></li>
+          <li><Link to="/staff" style={{ color: 'white', textDecoration: 'none' }}>Staff</Link></li>
+          <li><Link to="/projects" style={{ color: 'white', textDecoration: 'none' }}>Projects</Link></li>
+          <li><Link to="/assignments" style={{ color: 'white', textDecoration: 'none' }}>Assignments</Link></li>
+          <li><Link to="/forecasts" style={{ color: 'white', textDecoration: 'none' }}>Forecasts</Link></li>
+          <li><Link to="/reports" style={{ color: 'white', textDecoration: 'none' }}>Reports</Link></li>
+        </ul>
       </div>
-      <ul className="navbar-nav">
-        <li className="nav-item">
-          <Link to="/" className={`nav-link ${isActive('/')}`}>
-            Dashboard
-          </Link>
-        </li>
-        <li className="nav-item">
-          <Link to="/staff" className={`nav-link ${isActive('/staff')}`}>
-            Staff
-          </Link>
-        </li>
-        <li className="nav-item">
-          <Link to="/projects" className={`nav-link ${isActive('/projects')}`}>
-            Projects
-          </Link>
-        </li>
-        <li className="nav-item">
-          <Link to="/assignments" className={`nav-link ${isActive('/assignments')}`}>
-            Assignments
-          </Link>
-        </li>
-        <li className="nav-item">
-          <Link to="/forecasts" className={`nav-link ${isActive('/forecasts')}`}>
-            Forecasts
-          </Link>
-        </li>
-        <li className="nav-item">
-          <Link to="/reports" className={`nav-link ${isActive('/reports')}`}>
-            Reports
-          </Link>
-        </li>
-      </ul>
     </nav>
   );
 };

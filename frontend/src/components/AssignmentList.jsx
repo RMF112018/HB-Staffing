@@ -1,178 +1,223 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { assignmentAPI } from '../services/api';
-import DataTable from './common/DataTable';
-import LoadingSpinner from './common/LoadingSpinner';
-import ErrorMessage from './common/ErrorMessage';
+import { useApiError } from '../hooks/useApiError';
+import { useLoading } from '../contexts/LoadingContext';
+import SkeletonLoader from './common/SkeletonLoader';
 import './AssignmentList.css';
 
 const AssignmentList = () => {
-  const navigate = useNavigate();
   const [assignments, setAssignments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { error, handleError, clearError } = useApiError();
+  const { startLoading, stopLoading, isLoading } = useLoading();
 
   useEffect(() => {
-    loadAssignments();
+    fetchAssignments();
   }, []);
 
-  const loadAssignments = async () => {
+  const fetchAssignments = async () => {
+    startLoading('assignments');
+    clearError();
+
     try {
-      setLoading(true);
-      setError(null);
       const response = await assignmentAPI.getAll();
       setAssignments(response.data);
     } catch (err) {
-      console.error('Error loading assignments:', err);
-      setError('Failed to load assignments');
+      handleError(err);
     } finally {
-      setLoading(false);
+      stopLoading('assignments');
     }
   };
 
-  const handleEdit = (assignment) => {
-    navigate(`/assignments/${assignment.id}/edit`);
-  };
+  const handleDelete = async (id) => {
+    if (!window.confirm('Are you sure you want to remove this assignment?')) {
+      return;
+    }
 
-  const handleDelete = async (assignment) => {
-    if (window.confirm(`Are you sure you want to delete this assignment?`)) {
-      try {
-        await assignmentAPI.delete(assignment.id);
-        setAssignments(prev => prev.filter(a => a.id !== assignment.id));
-      } catch (err) {
-        console.error('Error deleting assignment:', err);
-        setError('Failed to delete assignment');
-      }
+    try {
+      await assignmentAPI.delete(id);
+      setAssignments(assignments.filter(assignment => assignment.id !== id));
+    } catch (err) {
+      const message = err.response?.data?.error?.message || 'Failed to remove assignment';
+      alert(message);
     }
   };
 
-  const handleCreateNew = () => {
-    navigate('/assignments/new');
-  };
-
-  const formatDateRange = (startDate, endDate) => {
-    if (!startDate || !endDate) return 'N/A';
-    const start = new Date(startDate).toLocaleDateString();
-    const end = new Date(endDate).toLocaleDateString();
-    return `${start} - ${end}`;
-  };
-
-  const getDurationWeeks = (startDate, endDate) => {
-    if (!startDate || !endDate) return 'N/A';
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const diffTime = Math.abs(end - start);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const weeks = Math.ceil(diffDays / 7);
-    return `${weeks} week${weeks !== 1 ? 's' : ''}`;
-  };
-
-  const columns = [
-    {
-      key: 'staff_name',
-      label: 'Staff Member',
-      sortable: true
-    },
-    {
-      key: 'project_name',
-      label: 'Project',
-      sortable: true
-    },
-    {
-      key: 'role_on_project',
-      label: 'Role',
-      sortable: true,
-      render: (role) => role || 'Not specified'
-    },
-    {
-      key: 'start_date',
-      label: 'Date Range',
-      sortable: true,
-      render: (startDate, assignment) => formatDateRange(startDate, assignment.end_date)
-    },
-    {
-      key: 'hours_per_week',
-      label: 'Hours/Week',
-      sortable: true,
-      align: 'center'
-    },
-    {
-      key: 'start_date',
-      label: 'Duration',
-      render: (startDate, assignment) => getDurationWeeks(startDate, assignment.end_date)
+  const getRateSourceLabel = (source) => {
+    switch (source) {
+      case 'project_role_rate':
+        return 'Project';
+      case 'inherited_project_role_rate':
+        return 'Inherited';
+      case 'role_default_billable_rate':
+        return 'Role Default';
+      default:
+        return '--';
     }
-  ];
+  };
 
-  // Group assignments by project for summary
-  const assignmentsByProject = assignments.reduce((acc, assignment) => {
-    const projectName = assignment.project_name || 'Unknown Project';
-    if (!acc[projectName]) {
-      acc[projectName] = [];
+  const getRateSourceClass = (source) => {
+    switch (source) {
+      case 'project_role_rate':
+        return 'rate-source-project';
+      case 'inherited_project_role_rate':
+        return 'rate-source-inherited';
+      case 'role_default_billable_rate':
+        return 'rate-source-role-default';
+      default:
+        return '';
     }
-    acc[projectName].push(assignment);
-    return acc;
-  }, {});
+  };
 
-  if (loading) {
-    return <LoadingSpinner message="Loading assignments..." />;
+  const getAllocationTypeLabel = (type) => {
+    switch (type) {
+      case 'full':
+        return '100%';
+      case 'split_by_projects':
+        return 'Split';
+      case 'percentage_total':
+        return 'Fixed %';
+      case 'percentage_monthly':
+        return 'Monthly';
+      default:
+        return type;
+    }
+  };
+
+  const getAllocationTypeClass = (type) => {
+    switch (type) {
+      case 'full':
+        return 'allocation-full';
+      case 'split_by_projects':
+        return 'allocation-split';
+      case 'percentage_total':
+        return 'allocation-percentage';
+      case 'percentage_monthly':
+        return 'allocation-monthly';
+      default:
+        return '';
+    }
+  };
+
+  if (isLoading('assignments')) {
+    return (
+      <div className="assignment-list">
+        <div className="header">
+          <h1>Staff Assignments</h1>
+          <SkeletonLoader />
+        </div>
+        <div className="assignment-table">
+          <SkeletonLoader />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="assignment-list">
+        <h1>Staff Assignments</h1>
+        <div className="error-message">
+          <p>Failed to load assignments: {error.message}</p>
+          <button onClick={fetchAssignments}>Retry</button>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="assignment-list">
-      <div className="list-header">
+      <div className="header">
         <h1>Staff Assignments</h1>
-        <button onClick={handleCreateNew} className="create-button">
-          Create Assignment
-        </button>
+        <Link to="/assignments/new" className="btn-primary">Create Assignment</Link>
       </div>
 
-      {error && (
-        <ErrorMessage
-          message={error}
-          onRetry={loadAssignments}
-        />
-      )}
-
-      <div className="assignment-summary">
-        <div className="summary-card">
-          <h3>Total Assignments</h3>
-          <div className="summary-value">{assignments.length}</div>
-        </div>
-        <div className="summary-card">
-          <h3>Active Projects</h3>
-          <div className="summary-value">{Object.keys(assignmentsByProject).length}</div>
-        </div>
-        <div className="summary-card">
-          <h3>Total Hours/Week</h3>
-          <div className="summary-value">
-            {assignments.reduce((total, assignment) => total + assignment.hours_per_week, 0)}
-          </div>
-        </div>
-      </div>
-
-      <DataTable
-        columns={columns}
-        data={assignments}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        loading={loading}
-        emptyMessage="No assignments found"
-        searchPlaceholder="Search assignments..."
-        className="assignment-table"
-      />
-
-      {Object.keys(assignmentsByProject).length > 0 && (
-        <div className="assignment-breakdown">
-          <h2>Assignments by Project</h2>
-          <div className="project-breakdown">
-            {Object.entries(assignmentsByProject).map(([projectName, projectAssignments]) => (
-              <div key={projectName} className="project-card">
-                <h4>{projectName}</h4>
-                <p>{projectAssignments.length} assignment{projectAssignments.length !== 1 ? 's' : ''}</p>
-                <p>Total Hours: {projectAssignments.reduce((total, assignment) => total + assignment.hours_per_week, 0)}/week</p>
-              </div>
+      <div className="assignment-table-container">
+        <table className="assignment-table">
+          <thead>
+            <tr>
+              <th>Staff Member</th>
+              <th>Project</th>
+              <th>Role</th>
+              <th>Dates</th>
+              <th>Hours/Week</th>
+              <th>Allocation</th>
+              <th>Billable Rate</th>
+              <th>Costs</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {assignments.map(assignment => (
+              <tr key={assignment.id}>
+                <td className="staff-name">{assignment.staff_name}</td>
+                <td className="project-info">
+                  <span className="project-path" title={assignment.project_hierarchy_path || assignment.project_name}>
+                    {assignment.project_hierarchy_path || assignment.project_name}
+                  </span>
+                </td>
+                <td className="role-name">{assignment.role_on_project || '-'}</td>
+                <td className="dates">
+                  <span className="date">{assignment.start_date}</span>
+                  <span className="date-separator">→</span>
+                  <span className="date">{assignment.end_date}</span>
+                </td>
+                <td className="hours">{assignment.hours_per_week}</td>
+                <td className="allocation-info">
+                  <span className={`allocation-type ${getAllocationTypeClass(assignment.allocation_type)}`}>
+                    {getAllocationTypeLabel(assignment.allocation_type)}
+                  </span>
+                  <span className="effective-allocation">
+                    {assignment.effective_allocation?.toFixed(0) || 100}%
+                  </span>
+                </td>
+                <td className="billable-rate">
+                  {assignment.billable_rate ? (
+                    <>
+                      <span className="rate">${assignment.billable_rate.toFixed(2)}</span>
+                      <span className={`rate-source ${getRateSourceClass(assignment.billable_rate_source)}`}>
+                        {getRateSourceLabel(assignment.billable_rate_source)}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="no-rate">--</span>
+                  )}
+                </td>
+                <td className="cost-info">
+                  <div className="cost-row">
+                    <span className="cost-label">Billable:</span>
+                    <span className="cost allocated-cost">
+                      ${assignment.allocated_estimated_cost?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || '--'}
+                    </span>
+                  </div>
+                  <div className="cost-row">
+                    <span className="cost-label">Internal:</span>
+                    <span className="cost internal-cost">
+                      ${assignment.allocated_internal_cost?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }) || '--'}
+                    </span>
+                  </div>
+                  {assignment.allocated_estimated_cost && assignment.allocated_internal_cost && (
+                    <div className="cost-row margin-row">
+                      <span className="cost-label">Margin:</span>
+                      <span className="cost margin-cost">
+                        ${(assignment.allocated_estimated_cost - assignment.allocated_internal_cost).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
+                  )}
+                </td>
+                <td className="actions">
+                  <Link to={`/assignments/${assignment.id}/edit`} className="btn-secondary">Edit</Link>
+                  <button className="btn-danger" onClick={() => handleDelete(assignment.id)}>Remove</button>
+                </td>
+              </tr>
             ))}
-          </div>
+          </tbody>
+        </table>
+      </div>
+
+      {assignments.length === 0 && (
+        <div className="empty-state">
+          <p>No assignments found. <Link to="/assignments/new">Create your first assignment</Link></p>
         </div>
       )}
     </div>

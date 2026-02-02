@@ -1,82 +1,100 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { staffAPI } from '../services/api';
+import { useNavigate, useParams } from 'react-router-dom';
+import { staffAPI, roleAPI } from '../services/api';
+import { useApiError } from '../hooks/useApiError';
 import { validateStaffForm } from '../utils/validation';
-import Input from './common/Input';
-import DatePicker from './common/DatePicker';
-import LoadingSpinner from './common/LoadingSpinner';
-import ErrorMessage from './common/ErrorMessage';
 import './StaffForm.css';
 
 const StaffForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const isEditing = Boolean(id);
+  const isEditing = !!id;
+  const { error, handleError, clearError } = useApiError();
 
   const [formData, setFormData] = useState({
     name: '',
-    role: '',
-    hourly_rate: '',
+    role_id: '',
+    internal_hourly_cost: '',
     availability_start: '',
     availability_end: '',
     skills: []
   });
-
+  const [roles, setRoles] = useState([]);
+  const [selectedRole, setSelectedRole] = useState(null);
   const [skillInput, setSkillInput] = useState('');
-  const [errors, setErrors] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [validationErrors, setValidationErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingRoles, setIsLoadingRoles] = useState(true);
 
   useEffect(() => {
+    fetchRoles();
     if (isEditing) {
-      loadStaff();
+      fetchStaff();
     }
-  }, [id, isEditing]);
+  }, [id]);
 
-  const loadStaff = async () => {
+  const fetchRoles = async () => {
     try {
-      setLoading(true);
-      setError(null);
+      const response = await roleAPI.getAll({ active_only: true });
+      setRoles(response.data);
+    } catch (err) {
+      handleError(err);
+    } finally {
+      setIsLoadingRoles(false);
+    }
+  };
+
+  const fetchStaff = async () => {
+    try {
       const response = await staffAPI.getById(id);
       const staff = response.data;
-
       setFormData({
         name: staff.name || '',
-        role: staff.role || '',
-        hourly_rate: staff.hourly_rate || '',
+        role_id: staff.role_id || '',
+        internal_hourly_cost: staff.internal_hourly_cost || '',
         availability_start: staff.availability_start || '',
         availability_end: staff.availability_end || '',
         skills: staff.skills || []
       });
+      // Find and set the selected role
+      if (staff.role_id) {
+        const role = roles.find(r => r.id === staff.role_id);
+        setSelectedRole(role || null);
+      }
     } catch (err) {
-      console.error('Error loading staff:', err);
-      setError('Failed to load staff member');
-    } finally {
-      setLoading(false);
+      handleError(err);
     }
   };
 
-  const handleInputChange = (field, value) => {
+  // Update selected role when role_id changes
+  useEffect(() => {
+    if (formData.role_id && roles.length > 0) {
+      const role = roles.find(r => r.id === parseInt(formData.role_id));
+      setSelectedRole(role || null);
+    }
+  }, [formData.role_id, roles]);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [field]: value
+      [name]: value
     }));
-
-    // Clear error for this field when user starts typing
-    if (errors[field]) {
-      setErrors(prev => ({
+    // Clear validation error when field changes
+    if (validationErrors[name]) {
+      setValidationErrors(prev => ({
         ...prev,
-        [field]: null
+        [name]: null
       }));
     }
   };
 
   const handleAddSkill = () => {
-    if (skillInput.trim() && !formData.skills.includes(skillInput.trim())) {
+    const skill = skillInput.trim();
+    if (skill && !formData.skills.includes(skill)) {
       setFormData(prev => ({
         ...prev,
-        skills: [...prev.skills, skillInput.trim()]
+        skills: [...prev.skills, skill]
       }));
       setSkillInput('');
     }
@@ -89,7 +107,7 @@ const StaffForm = () => {
     }));
   };
 
-  const handleSkillInputKeyPress = (e) => {
+  const handleSkillKeyPress = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       handleAddSkill();
@@ -98,189 +116,170 @@ const StaffForm = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    clearError();
 
     // Validate form
-    const validationErrors = validateStaffForm(formData);
-    setErrors(validationErrors);
-
-    if (Object.keys(validationErrors).length > 0) {
+    const errors = validateStaffForm(formData);
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
       return;
     }
 
-    try {
-      setSaving(true);
-      setError(null);
+    setIsSubmitting(true);
 
-      // Prepare data for API
-      const submitData = {
-        ...formData,
-        hourly_rate: parseFloat(formData.hourly_rate)
+    try {
+      const payload = {
+        name: formData.name,
+        role_id: parseInt(formData.role_id),
+        internal_hourly_cost: parseFloat(formData.internal_hourly_cost),
+        availability_start: formData.availability_start || null,
+        availability_end: formData.availability_end || null,
+        skills: formData.skills
       };
 
-      let response;
       if (isEditing) {
-        response = await staffAPI.update(id, submitData);
+        await staffAPI.update(id, payload);
       } else {
-        response = await staffAPI.create(submitData);
+        await staffAPI.create(payload);
       }
-
-      // Navigate back to staff list
       navigate('/staff');
     } catch (err) {
-      console.error('Error saving staff:', err);
-      setError(err.response?.data?.message || 'Failed to save staff member');
+      handleError(err);
     } finally {
-      setSaving(false);
+      setIsSubmitting(false);
     }
   };
 
-  const handleCancel = () => {
-    navigate('/staff');
-  };
-
-  if (loading) {
-    return <LoadingSpinner message="Loading staff member..." />;
-  }
-
   return (
     <div className="staff-form">
-      <div className="form-header">
-        <h1>{isEditing ? 'Edit Staff Member' : 'Add New Staff Member'}</h1>
-        <button
-          type="button"
-          onClick={handleCancel}
-          className="cancel-button"
-          disabled={saving}
-        >
-          Cancel
-        </button>
-      </div>
+      <h1>{isEditing ? 'Edit Staff Member' : 'Add New Staff Member'}</h1>
 
       {error && (
-        <ErrorMessage
-          message={error}
-          onRetry={isEditing ? loadStaff : null}
-        />
+        <div className="error-message">
+          <p>{error.message}</p>
+        </div>
       )}
 
-      <form onSubmit={handleSubmit} className="staff-form-content">
-        <div className="form-grid">
-          <Input
-            label="Name"
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label htmlFor="name">Full Name *</label>
+          <input
+            type="text"
+            id="name"
             name="name"
             value={formData.name}
-            onChange={handleInputChange}
-            error={errors.name}
-            required
-            placeholder="Enter full name"
-            disabled={saving}
+            onChange={handleChange}
+            className={validationErrors.name ? 'error' : ''}
           />
-
-          <Input
-            label="Role"
-            name="role"
-            value={formData.role}
-            onChange={handleInputChange}
-            error={errors.role}
-            required
-            placeholder="e.g., Project Manager, Estimator"
-            disabled={saving}
-          />
-
-          <Input
-            label="Hourly Rate ($)"
-            name="hourly_rate"
-            type="number"
-            step="0.01"
-            min="0"
-            value={formData.hourly_rate}
-            onChange={handleInputChange}
-            error={errors.hourly_rate}
-            required
-            placeholder="0.00"
-            disabled={saving}
-          />
-
-          <DatePicker
-            label="Availability Start Date"
-            name="availability_start"
-            value={formData.availability_start}
-            onChange={handleInputChange}
-            error={errors.availability_start}
-            disabled={saving}
-          />
-
-          <DatePicker
-            label="Availability End Date"
-            name="availability_end"
-            value={formData.availability_end}
-            onChange={handleInputChange}
-            error={errors.availability_end}
-            disabled={saving}
-          />
+          {validationErrors.name && <span className="field-error">{validationErrors.name}</span>}
         </div>
 
-        <div className="skills-section">
-          <label className="skills-label">Skills *</label>
+        <div className="form-group">
+          <label htmlFor="role_id">Role *</label>
+          <select
+            id="role_id"
+            name="role_id"
+            value={formData.role_id}
+            onChange={handleChange}
+            className={validationErrors.role_id ? 'error' : ''}
+            disabled={isLoadingRoles}
+          >
+            <option value="">Select a role...</option>
+            {roles.map(role => (
+              <option key={role.id} value={role.id}>
+                {role.name} (${role.hourly_cost?.toFixed(2)}/hr)
+              </option>
+            ))}
+          </select>
+          {selectedRole && (
+            <span className="field-hint">
+              Role cost: ${selectedRole.hourly_cost?.toFixed(2)}/hr
+              {selectedRole.default_billable_rate && ` | Default billable: $${selectedRole.default_billable_rate?.toFixed(2)}/hr`}
+              {selectedRole.description && ` - ${selectedRole.description}`}
+            </span>
+          )}
+          {validationErrors.role_id && <span className="field-error">{validationErrors.role_id}</span>}
+        </div>
 
-          <div className="skills-input-group">
-            <Input
-              name="skillInput"
-              value={skillInput}
-              onChange={(name, value) => setSkillInput(value)}
-              placeholder="Add a skill"
-              disabled={saving}
-              onKeyPress={handleSkillInputKeyPress}
+        <div className="form-group">
+          <label htmlFor="internal_hourly_cost">Internal Hourly Cost ($) *</label>
+          <input
+            type="number"
+            id="internal_hourly_cost"
+            name="internal_hourly_cost"
+            value={formData.internal_hourly_cost}
+            onChange={handleChange}
+            min="0"
+            step="0.01"
+            placeholder="e.g., 75.00"
+            className={validationErrors.internal_hourly_cost ? 'error' : ''}
+          />
+          <span className="field-hint">
+            This is what you pay this staff member per hour. The billable rate comes from the role's default or project-specific rate.
+          </span>
+          {validationErrors.internal_hourly_cost && <span className="field-error">{validationErrors.internal_hourly_cost}</span>}
+        </div>
+
+        <div className="form-row">
+          <div className="form-group">
+            <label htmlFor="availability_start">Availability Start Date</label>
+            <input
+              type="date"
+              id="availability_start"
+              name="availability_start"
+              value={formData.availability_start}
+              onChange={handleChange}
+              className={validationErrors.availability_start ? 'error' : ''}
             />
-            <button
-              type="button"
-              onClick={handleAddSkill}
-              className="add-skill-button"
-              disabled={!skillInput.trim() || saving}
-            >
-              Add Skill
-            </button>
+            {validationErrors.availability_start && <span className="field-error">{validationErrors.availability_start}</span>}
           </div>
 
+          <div className="form-group">
+            <label htmlFor="availability_end">Availability End Date</label>
+            <input
+              type="date"
+              id="availability_end"
+              name="availability_end"
+              value={formData.availability_end}
+              onChange={handleChange}
+              className={validationErrors.availability_end ? 'error' : ''}
+            />
+            {validationErrors.availability_end && <span className="field-error">{validationErrors.availability_end}</span>}
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="skills">Skills</label>
+          <div className="skills-input">
+            <input
+              type="text"
+              id="skills"
+              value={skillInput}
+              onChange={(e) => setSkillInput(e.target.value)}
+              onKeyPress={handleSkillKeyPress}
+              placeholder="Type a skill and press Enter"
+            />
+            <button type="button" onClick={handleAddSkill} className="btn-secondary">Add</button>
+          </div>
           {formData.skills.length > 0 && (
             <div className="skills-list">
               {formData.skills.map((skill, index) => (
                 <span key={index} className="skill-tag">
                   {skill}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveSkill(skill)}
-                    className="remove-skill-button"
-                    disabled={saving}
-                    aria-label={`Remove ${skill} skill`}
-                  >
-                    ×
-                  </button>
+                  <button type="button" onClick={() => handleRemoveSkill(skill)}>&times;</button>
                 </span>
               ))}
             </div>
           )}
-
-          {errors.skills && (
-            <span className="skills-error">{errors.skills}</span>
-          )}
+          {validationErrors.skills && <span className="field-error">{validationErrors.skills}</span>}
         </div>
 
         <div className="form-actions">
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="cancel-button"
-            disabled={saving}
-          >
-            Cancel
+          <button type="submit" className="btn-primary" disabled={isSubmitting}>
+            {isSubmitting ? 'Saving...' : (isEditing ? 'Update Staff Member' : 'Add Staff Member')}
           </button>
-          <button
-            type="submit"
-            className="submit-button"
-            disabled={saving}
-          >
-            {saving ? 'Saving...' : (isEditing ? 'Update Staff' : 'Create Staff')}
+          <button type="button" className="btn-secondary" onClick={() => navigate('/staff')}>
+            Cancel
           </button>
         </div>
       </form>

@@ -1,0 +1,307 @@
+.project-role-rates {
+  padding: 2rem;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.project-role-rates .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.project-role-rates .header-info h1 {
+  margin: 0;
+  color: #2c3e50;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.project-role-rates .project-icon {
+  font-size: 1.5rem;
+}
+
+.project-role-rates .parent-info {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.9rem;
+  color: #7f8c8d;
+}
+
+.project-role-rates .parent-info a {
+  color: #3498db;
+  text-decoration: none;
+}
+
+.project-role-rates .parent-info a:hover {
+  text-decoration: underline;
+}
+
+.project-role-rates .header-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* Notice Boxes */
+.folder-notice,
+.inheritance-notice {
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.folder-notice {
+  background: #fff8e1;
+  border-left: 4px solid #f39c12;
+}
+
+.inheritance-notice {
+  background: #e3f2fd;
+  border-left: 4px solid #3498db;
+}
+
+.folder-notice p,
+.inheritance-notice p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* Rates Table */
+.rates-table-container {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.rates-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.rates-table th {
+  background: #f8f9fa;
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #2c3e50;
+  border-bottom: 2px solid #ecf0f1;
+}
+
+.rates-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #ecf0f1;
+  vertical-align: middle;
+}
+
+.rates-table tr:last-child td {
+  border-bottom: none;
+}
+
+.rates-table tr.inherited {
+  background: #fafafa;
+}
+
+.rates-table tr.explicit {
+  background: #f0fff4;
+}
+
+.rates-table tr.unset {
+  background: #fff;
+}
+
+.rates-table tr:hover {
+  background: #f5f5f5;
+}
+
+/* Table Cells */
+.role-name {
+  font-weight: 500;
+  color: #2c3e50;
+}
+
+.rate-value {
+  font-family: 'Monaco', 'Consolas', monospace;
+}
+
+.rate {
+  font-weight: 600;
+  color: #27ae60;
+}
+
+.no-rate {
+  color: #bdc3c7;
+  font-style: italic;
+}
+
+.rate-input {
+  width: 120px;
+  padding: 0.5rem;
+  border: 2px solid #3498db;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+.rate-input:focus {
+  outline: none;
+  border-color: #2980b9;
+}
+
+/* Source Labels */
+.source-inherited {
+  color: #7f8c8d;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.5rem;
+  background: #ecf0f1;
+  border-radius: 4px;
+}
+
+.source-explicit {
+  color: #27ae60;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.5rem;
+  background: #d5f5e3;
+  border-radius: 4px;
+}
+
+.source-none {
+  color: #bdc3c7;
+}
+
+/* Action Buttons */
+.rate-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.rate-actions button {
+  padding: 0.4rem 0.75rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background-color 0.2s ease;
+}
+
+.btn-edit {
+  background: #3498db;
+  color: white;
+}
+
+.btn-edit:hover {
+  background: #2980b9;
+}
+
+.btn-save {
+  background: #27ae60;
+  color: white;
+}
+
+.btn-save:hover:not(:disabled) {
+  background: #229954;
+}
+
+.btn-cancel {
+  background: #95a5a6;
+  color: white;
+}
+
+.btn-cancel:hover:not(:disabled) {
+  background: #7f8c8d;
+}
+
+.btn-revert {
+  background: #e74c3c;
+  color: white;
+}
+
+.btn-revert:hover {
+  background: #c0392b;
+}
+
+.btn-save:disabled,
+.btn-cancel:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Common Button Styles */
+.btn-secondary {
+  background: #ecf0f1;
+  color: #2c3e50;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: background-color 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background: #bdc3c7;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: #7f8c8d;
+}
+
+.empty-state a {
+  color: #3498db;
+}
+
+/* Error Message */
+.error-message {
+  background: #fdf0ef;
+  border-left: 4px solid #e74c3c;
+  padding: 1rem 1.5rem;
+  border-radius: 4px;
+  margin-bottom: 1.5rem;
+}
+
+.error-message p {
+  margin: 0 0 1rem 0;
+  color: #c0392b;
+}
+
+.error-message button {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .project-role-rates {
+    padding: 1rem;
+  }
+
+  .project-role-rates .header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .project-role-rates .header-actions {
+    flex-direction: column;
+  }
+
+  .rates-table-container {
+    overflow-x: auto;
+  }
+
+  .rates-table {
+    min-width: 600px;
+  }
+}
+

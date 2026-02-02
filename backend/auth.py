@@ -9,10 +9,12 @@ from flask_jwt_extended import (
 )
 from flask import current_app, request, jsonify, g
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timezone
 from models import User
+from db import db
 from errors import UnauthorizedError, ForbiddenError
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,7 @@ def init_auth(app):
     @jwt.user_lookup_loader
     def user_lookup_callback(_jwt_header, jwt_data):
         identity = jwt_data["sub"]
-        return User.query.get(identity)
+        return db.session.get(User, identity)
 
     @jwt.expired_token_loader
     def expired_token_callback(jwt_header, jwt_payload):
@@ -78,7 +80,7 @@ def login_user(username, password):
         raise ForbiddenError("Account is deactivated")
 
     # Update last login
-    user.last_login = datetime.utcnow()
+    user.last_login = datetime.now(timezone.utc)
 
     # Create tokens
     access_token = create_access_token(identity=user)
@@ -96,7 +98,7 @@ def login_user(username, password):
 def refresh_access_token():
     """Refresh access token using refresh token"""
     current_user = get_jwt_identity()
-    user = User.query.get(current_user)
+    user = db.session.get(User, current_user)
 
     if not user or not user.is_active:
         raise ForbiddenError("User account is invalid or deactivated")
@@ -124,7 +126,6 @@ def register_user(username, email, password, role='preconstruction'):
     # Create user
     user = User(username=username, email=email, password=password, role=role)
 
-    from db import db
     db.session.add(user)
     db.session.commit()
 
@@ -140,7 +141,7 @@ def require_role(required_role):
         @jwt_required()
         def wrapper(*args, **kwargs):
             current_user = get_jwt_identity()
-            user = User.query.get(current_user)
+            user = db.session.get(User, current_user)
 
             if not user:
                 raise UnauthorizedError("User not found")
@@ -164,7 +165,7 @@ def require_permission(permission):
         @jwt_required()
         def wrapper(*args, **kwargs):
             current_user = get_jwt_identity()
-            user = User.query.get(current_user)
+            user = db.session.get(User, current_user)
 
             if not user:
                 raise UnauthorizedError("User not found")
@@ -189,7 +190,7 @@ def optional_auth(f):
             verify_jwt_in_request(optional=True)
             current_user = get_jwt_identity()
             if current_user:
-                user = User.query.get(current_user)
+                user = db.session.get(User, current_user)
                 if user and user.is_active:
                     g.current_user = user
         except Exception:
@@ -206,21 +207,47 @@ def get_current_user():
 
 
 def create_default_admin():
-    """Create default admin user if none exists"""
+    """Create default admin user if none exists
+    
+    Requires ADMIN_USERNAME and ADMIN_PASSWORD environment variables.
+    In development, falls back to defaults if not set.
+    In production, raises ValueError if not set.
+    """
     admin = User.query.filter_by(role='admin').first()
     if not admin:
+        # Get admin credentials from environment variables
+        admin_username = os.environ.get('ADMIN_USERNAME', 'admin')
+        admin_password = os.environ.get('ADMIN_PASSWORD')
+        admin_email = os.environ.get('ADMIN_EMAIL', 'admin@hb-staffing.com')
+        
+        # Validate that password is provided
+        if not admin_password:
+            # In development, allow missing password with warning
+            # In production, this should be required
+            env = os.environ.get('FLASK_ENV', 'development')
+            if env == 'production':
+                raise ValueError(
+                    "ADMIN_PASSWORD environment variable is required in production. "
+                    "Please set ADMIN_USERNAME and ADMIN_PASSWORD environment variables."
+                )
+            else:
+                logger.warning(
+                    "ADMIN_PASSWORD not set. Admin user creation skipped. "
+                    "Set ADMIN_USERNAME and ADMIN_PASSWORD environment variables to create admin user."
+                )
+                return None
+        
         admin = User(
-            username='admin',
-            email='admin@hb-staffing.com',
-            password='admin123!',  # Should be changed in production
+            username=admin_username,
+            email=admin_email,
+            password=admin_password,
             role='admin'
         )
 
-        from db import db
         db.session.add(admin)
         db.session.commit()
 
-        logger.info("Default admin user created")
+        logger.info(f"Default admin user created: {admin_username}")
         return admin
 
     return None

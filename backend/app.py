@@ -121,6 +121,8 @@ def create_app(config_name='development'):
         from database import init_db, seed_database
         init_db()
         seed_database()
+        # Create default admin user if none exists (uses environment variables)
+        create_default_admin()
 
     # Register blueprints
     from routes import api

@@ -1,602 +1,485 @@
 import React, { useState, useEffect } from 'react';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
-import Papa from 'papaparse';
-import { staffAPI, projectAPI, assignmentAPI, forecastAPI } from '../services/api';
-import Select from './common/Select';
-import DatePicker from './common/DatePicker';
-import LoadingSpinner from './common/LoadingSpinner';
-import ErrorMessage from './common/ErrorMessage';
+import { projectAPI, reportsAPI } from '../services/api';
+import { useApiError } from '../hooks/useApiError';
+import { useLoading } from '../contexts/LoadingContext';
 import './Reports.css';
 
-const REPORT_TYPES = [
-  { value: 'staffing-summary', label: 'Staffing Summary' },
-  { value: 'cost-analysis', label: 'Cost Analysis' },
-  { value: 'project-status', label: 'Project Status Report' },
-  { value: 'staff-utilization', label: 'Staff Utilization' },
-  { value: 'staffing-gaps', label: 'Staffing Gaps Analysis' }
-];
-
 const Reports = () => {
-  const [reportType, setReportType] = useState('');
+  const { error, handleError, clearError } = useApiError();
+  const { startLoading, stopLoading, isLoading } = useLoading();
+
+  // Filter state
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [projectFilter, setProjectFilter] = useState('');
-  const [staffFilter, setStaffFilter] = useState('');
-  const [reportData, setReportData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [projects, setProjects] = useState([]);
-  const [staff, setStaff] = useState([]);
+  const [includeSubProjects, setIncludeSubProjects] = useState(true);
 
+  // Report data state
+  const [reportData, setReportData] = useState(null);
+  const [costViewMode, setCostViewMode] = useState('both'); // 'internal', 'billable', 'both'
+
+  // Load projects on mount
   useEffect(() => {
-    loadFilters();
+    fetchProjects();
   }, []);
 
-  const loadFilters = async () => {
+  const fetchProjects = async () => {
     try {
-      const [projectsResponse, staffResponse] = await Promise.all([
-        projectAPI.getAll(),
-        staffAPI.getAll()
-      ]);
-      setProjects(projectsResponse.data);
-      setStaff(staffResponse.data);
+      const response = await projectAPI.getAll();
+      setProjects(response.data);
     } catch (err) {
-      console.error('Error loading filters:', err);
+      console.error('Failed to load projects:', err);
     }
   };
 
-  const generateReport = async () => {
-    if (!reportType) {
-      setError('Please select a report type');
+  const handleGenerateReport = async () => {
+    if (!selectedProjectId) {
+      alert('Please select a project or project folder');
       return;
     }
 
-    try {
-      setLoading(true);
-      setError(null);
-      setReportData(null);
+    startLoading('report');
+    clearError();
 
-      const params = {};
+    try {
+      const params = {
+        project_id: selectedProjectId,
+        include_sub_projects: includeSubProjects
+      };
+      
       if (startDate) params.start_date = startDate;
       if (endDate) params.end_date = endDate;
 
-      let data;
-
-      switch (reportType) {
-        case 'staffing-summary':
-          data = await generateStaffingSummary(params);
-          break;
-        case 'cost-analysis':
-          data = await generateCostAnalysis(params);
-          break;
-        case 'project-status':
-          data = await generateProjectStatus(params);
-          break;
-        case 'staff-utilization':
-          data = await generateStaffUtilization(params);
-          break;
-        case 'staffing-gaps':
-          data = await generateStaffingGaps(params);
-          break;
-        default:
-          throw new Error('Unknown report type');
-      }
-
-      setReportData(data);
+      const response = await reportsAPI.getStaffPlanningReport(params);
+      setReportData(response.data);
     } catch (err) {
-      console.error('Error generating report:', err);
-      setError('Failed to generate report');
+      handleError(err);
     } finally {
-      setLoading(false);
+      stopLoading('report');
     }
   };
 
-  const generateStaffingSummary = async (params) => {
-    const [staffResponse, assignmentsResponse] = await Promise.all([
-      staffAPI.getAll(),
-      assignmentAPI.getAll()
-    ]);
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(value);
+  };
 
-    const staff = staffResponse.data;
-    const assignments = assignmentsResponse.data;
+  const formatMonth = (monthStr) => {
+    const date = new Date(monthStr + '-01');
+    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  };
 
-    // Group assignments by project
-    const projectAssignments = assignments.reduce((acc, assignment) => {
-      const projectName = assignment.project_name;
-      if (!acc[projectName]) {
-        acc[projectName] = [];
+  // Get role color for Gantt chart
+  const getRoleColor = (roleIndex) => {
+    const colors = [
+      '#3498db', '#e74c3c', '#2ecc71', '#9b59b6', '#f39c12',
+      '#1abc9c', '#e67e22', '#34495e', '#16a085', '#c0392b'
+    ];
+    return colors[roleIndex % colors.length];
+  };
+
+  // Calculate bar position for Gantt chart
+  const getBarStyle = (entry, months) => {
+    const startMonth = entry.start_date.substring(0, 7);
+    const endMonth = entry.end_date.substring(0, 7);
+    
+    const startIndex = months.indexOf(startMonth);
+    const endIndex = months.indexOf(endMonth);
+    
+    // Handle cases where dates are outside the report period
+    const effectiveStart = Math.max(0, startIndex === -1 ? 0 : startIndex);
+    const effectiveEnd = Math.min(months.length - 1, endIndex === -1 ? months.length - 1 : endIndex);
+    
+    const startPercent = (effectiveStart / months.length) * 100;
+    const widthPercent = ((effectiveEnd - effectiveStart + 1) / months.length) * 100;
+    
+    return {
+      left: `${startPercent}%`,
+      width: `${Math.max(widthPercent, 2)}%`
+    };
+  };
+
+  // Group staff entries by role for Gantt chart
+  const getEntriesByRole = () => {
+    if (!reportData?.staff_entries) return {};
+    
+    const byRole = {};
+    reportData.staff_entries.forEach(entry => {
+      if (!byRole[entry.role_name]) {
+        byRole[entry.role_name] = {
+          role_id: entry.role_id,
+          entries: []
+        };
       }
-      acc[projectName].push(assignment);
-      return acc;
-    }, {});
-
-    return {
-      title: 'Staffing Summary Report',
-      generatedAt: new Date().toLocaleString(),
-      period: params.start_date && params.end_date ?
-        `${params.start_date} to ${params.end_date}` : 'All time',
-      summary: {
-        totalStaff: staff.length,
-        totalAssignments: assignments.length,
-        activeProjects: Object.keys(projectAssignments).length
-      },
-      data: {
-        staff: staff,
-        assignments: assignments,
-        projectBreakdown: projectAssignments
-      }
-    };
-  };
-
-  const generateCostAnalysis = async (params) => {
-    const projects = await projectAPI.getAll();
-    const costData = [];
-
-    for (const project of projects.data) {
-      try {
-        const costResponse = await projectAPI.getCost(project.id);
-        costData.push({
-          project: project,
-          cost: costResponse.data
-        });
-      } catch (err) {
-        console.error(`Error getting cost for project ${project.id}:`, err);
-      }
-    }
-
-    const totalCost = costData.reduce((sum, item) => sum + (item.cost.total_cost || 0), 0);
-    const budgetVariance = costData.reduce((sum, item) =>
-      sum + (item.cost.budget_variance || 0), 0);
-
-    return {
-      title: 'Cost Analysis Report',
-      generatedAt: new Date().toLocaleString(),
-      period: params.start_date && params.end_date ?
-        `${params.start_date} to ${params.end_date}` : 'All time',
-      summary: {
-        totalProjects: costData.length,
-        totalCost: totalCost,
-        budgetVariance: budgetVariance
-      },
-      data: costData
-    };
-  };
-
-  const generateProjectStatus = async (params) => {
-    const response = await projectAPI.getAll();
-    const projects = response.data;
-
-    const statusCounts = projects.reduce((acc, project) => {
-      acc[project.status] = (acc[project.status] || 0) + 1;
-      return acc;
-    }, {});
-
-    return {
-      title: 'Project Status Report',
-      generatedAt: new Date().toLocaleString(),
-      period: params.start_date && params.end_date ?
-        `${params.start_date} to ${params.end_date}` : 'Current',
-      summary: statusCounts,
-      data: projects.map(project => ({
-        ...project,
-        duration: project.start_date && project.end_date ?
-          Math.round((new Date(project.end_date) - new Date(project.start_date)) / (1000 * 60 * 60 * 24)) + ' days' :
-          'Not set'
-      }))
-    };
-  };
-
-  const generateStaffUtilization = async (params) => {
-    if (!params.start_date || !params.end_date) {
-      // Set default 3-month period
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setMonth(startDate.getMonth() - 3);
-      params.start_date = startDate.toISOString().split('T')[0];
-      params.end_date = endDate.toISOString().split('T')[0];
-    }
-
-    const response = await forecastAPI.getOrganization(params);
-    const orgForecast = response.data;
-
-    return {
-      title: 'Staff Utilization Report',
-      generatedAt: new Date().toLocaleString(),
-      period: `${params.start_date} to ${params.end_date}`,
-      summary: {
-        totalStaff: Object.keys(orgForecast.staff_utilization || {}).length,
-        averageUtilization: Object.values(orgForecast.staff_utilization || {}).length > 0 ?
-          Object.values(orgForecast.staff_utilization).reduce((sum, staff) =>
-            sum + (staff.utilization_rate || 0), 0) /
-          Object.values(orgForecast.staff_utilization).length : 0
-      },
-      data: orgForecast.staff_utilization || {}
-    };
-  };
-
-  const generateStaffingGaps = async (params) => {
-    const response = await forecastAPI.getGaps(params);
-    const gaps = response.data.gaps || [];
-
-    return {
-      title: 'Staffing Gaps Analysis',
-      generatedAt: new Date().toLocaleString(),
-      period: params.start_date && params.end_date ?
-        `${params.start_date} to ${params.end_date}` : 'Current',
-      summary: {
-        totalGaps: gaps.length,
-        projectsAffected: new Set(gaps.map(gap => gap.project_id)).size
-      },
-      data: gaps
-    };
-  };
-
-  const exportToCSV = () => {
-    if (!reportData || !reportData.data) return;
-
-    let csvData = [];
-    let filename = `${reportType}-report.csv`;
-
-    switch (reportType) {
-      case 'staffing-summary':
-        csvData = [
-          ['Staff Name', 'Role', 'Skills'],
-          ...reportData.data.staff.map(staff => [
-            staff.name,
-            staff.role,
-            (staff.skills || []).join('; ')
-          ])
-        ];
-        break;
-
-      case 'cost-analysis':
-        csvData = [
-          ['Project Name', 'Total Cost', 'Budget', 'Variance'],
-          ...reportData.data.map(item => [
-            item.project.name,
-            item.cost.total_cost || 0,
-            item.project.budget || 'N/A',
-            item.cost.budget_variance || 'N/A'
-          ])
-        ];
-        break;
-
-      case 'project-status':
-        csvData = [
-          ['Project Name', 'Status', 'Start Date', 'End Date', 'Budget', 'Location'],
-          ...reportData.data.map(project => [
-            project.name,
-            project.status,
-            project.start_date || 'N/A',
-            project.end_date || 'N/A',
-            project.budget || 'N/A',
-            project.location || 'N/A'
-          ])
-        ];
-        break;
-
-      case 'staff-utilization':
-        csvData = [
-          ['Staff Name', 'Assigned Hours', 'Available Hours', 'Utilization %', 'Status'],
-          ...Object.values(reportData.data).map(staff => [
-            staff.staff_name,
-            staff.assigned_hours?.toFixed(1) || 0,
-            staff.available_hours?.toFixed(1) || 0,
-            ((staff.utilization_rate || 0) * 100).toFixed(1),
-            staff.overallocated ? 'Overallocated' : 'Normal'
-          ])
-        ];
-        break;
-
-      case 'staffing-gaps':
-        csvData = [
-          ['Project', 'Week', 'Message'],
-          ...reportData.data.map(gap => [
-            gap.project_name || gap.project_id,
-            gap.week || 'N/A',
-            gap.message
-          ])
-        ];
-        break;
-    }
-
-    const csv = Papa.unparse(csvData);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const exportToPDF = () => {
-    if (!reportData) return;
-
-    const doc = new jsPDF();
-
-    // Title
-    doc.setFontSize(20);
-    doc.text(reportData.title, 20, 30);
-
-    // Metadata
-    doc.setFontSize(12);
-    doc.text(`Generated: ${reportData.generatedAt}`, 20, 45);
-    doc.text(`Period: ${reportData.period}`, 20, 55);
-
-    // Summary
-    doc.text('Summary:', 20, 70);
-    let yPos = 80;
-    Object.entries(reportData.summary).forEach(([key, value]) => {
-      const displayValue = typeof value === 'number' ? value.toLocaleString() : value;
-      doc.text(`${key}: ${displayValue}`, 30, yPos);
-      yPos += 10;
+      byRole[entry.role_name].entries.push(entry);
     });
-
-    // Data table
-    let tableData = [];
-    let tableColumns = [];
-
-    switch (reportType) {
-      case 'staffing-summary':
-        tableColumns = ['Name', 'Role', 'Skills'];
-        tableData = reportData.data.staff.map(staff => [
-          staff.name,
-          staff.role,
-          (staff.skills || []).join(', ')
-        ]);
-        break;
-
-      case 'cost-analysis':
-        tableColumns = ['Project', 'Cost', 'Budget'];
-        tableData = reportData.data.map(item => [
-          item.project.name,
-          `$${item.cost.total_cost?.toLocaleString() || '0'}`,
-          item.project.budget ? `$${item.project.budget.toLocaleString()}` : 'N/A'
-        ]);
-        break;
-
-      case 'project-status':
-        tableColumns = ['Project', 'Status', 'Budget', 'Location'];
-        tableData = reportData.data.map(project => [
-          project.name,
-          project.status,
-          project.budget ? `$${project.budget.toLocaleString()}` : 'N/A',
-          project.location || 'N/A'
-        ]);
-        break;
-
-      case 'staff-utilization':
-        tableColumns = ['Staff', 'Utilization %', 'Status'];
-        tableData = Object.values(reportData.data).map(staff => [
-          staff.staff_name,
-          `${((staff.utilization_rate || 0) * 100).toFixed(1)}%`,
-          staff.overallocated ? 'Overallocated' : 'Normal'
-        ]);
-        break;
-
-      case 'staffing-gaps':
-        tableColumns = ['Project', 'Issue'];
-        tableData = reportData.data.map(gap => [
-          gap.project_name || gap.project_id,
-          gap.message
-        ]);
-        break;
-    }
-
-    if (tableData.length > 0) {
-      doc.autoTable({
-        head: [tableColumns],
-        body: tableData,
-        startY: yPos + 10,
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [52, 152, 219] }
-      });
-    }
-
-    doc.save(`${reportType}-report.pdf`);
+    return byRole;
   };
 
-  const renderReportContent = () => {
-    if (!reportData) return null;
-
-    switch (reportType) {
-      case 'staffing-summary':
-        return (
-          <div className="report-content">
-            <div className="summary-cards">
-              <div className="summary-card">
-                <h4>Total Staff</h4>
-                <div className="summary-value">{reportData.summary.totalStaff}</div>
-              </div>
-              <div className="summary-card">
-                <h4>Active Assignments</h4>
-                <div className="summary-value">{reportData.summary.totalAssignments}</div>
-              </div>
-              <div className="summary-card">
-                <h4>Projects</h4>
-                <div className="summary-value">{reportData.summary.activeProjects}</div>
-              </div>
-            </div>
-            <div className="report-table">
-              <h4>Staff Details</h4>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Role</th>
-                    <th>Skills</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportData.data.staff.map((person, index) => (
-                    <tr key={index}>
-                      <td>{person.name}</td>
-                      <td>{person.role}</td>
-                      <td>{(person.skills || []).join(', ')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-
-      case 'cost-analysis':
-        return (
-          <div className="report-content">
-            <div className="summary-cards">
-              <div className="summary-card">
-                <h4>Total Projects</h4>
-                <div className="summary-value">{reportData.summary.totalProjects}</div>
-              </div>
-              <div className="summary-card">
-                <h4>Total Cost</h4>
-                <div className="summary-value">${reportData.summary.totalCost.toLocaleString()}</div>
-              </div>
-              <div className="summary-card">
-                <h4>Budget Variance</h4>
-                <div className="summary-value">${reportData.summary.budgetVariance?.toLocaleString() || '0'}</div>
-              </div>
-            </div>
-            <div className="report-table">
-              <h4>Cost Breakdown</h4>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Project</th>
-                    <th>Total Cost</th>
-                    <th>Budget</th>
-                    <th>Variance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportData.data.map((item, index) => (
-                    <tr key={index}>
-                      <td>{item.project.name}</td>
-                      <td>${item.cost.total_cost?.toLocaleString() || '0'}</td>
-                      <td>{item.project.budget ? `$${item.project.budget.toLocaleString()}` : 'N/A'}</td>
-                      <td>{item.cost.budget_variance ? `$${item.cost.budget_variance.toLocaleString()}` : 'N/A'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-
-      case 'staffing-gaps':
-        return (
-          <div className="report-content">
-            <div className="summary-cards">
-              <div className="summary-card alert">
-                <h4>Staffing Gaps Found</h4>
-                <div className="summary-value">{reportData.summary.totalGaps}</div>
-              </div>
-              <div className="summary-card">
-                <h4>Projects Affected</h4>
-                <div className="summary-value">{reportData.summary.projectsAffected}</div>
-              </div>
-            </div>
-            <div className="gaps-list">
-              {reportData.data.map((gap, index) => (
-                <div key={index} className="gap-item">
-                  <h5>{gap.project_name || `Project ${gap.project_id}`}</h5>
-                  <p>{gap.message}</p>
-                  {gap.week && <span className="gap-week">Week: {gap.week}</span>}
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-
-      default:
-        return (
-          <div className="report-content">
-            <p>Report generated successfully. Use export buttons to download.</p>
-          </div>
-        );
-    }
-  };
+  const selectedProject = projects.find(p => p.id === parseInt(selectedProjectId));
 
   return (
     <div className="reports">
-      <div className="reports-header">
-        <h1>Reports & Analytics</h1>
-      </div>
+      <h1>Staff Planning Report</h1>
 
-      <div className="report-controls">
-        <div className="control-grid">
-          <Select
-            label="Report Type"
-            name="reportType"
-            value={reportType}
-            onChange={(name, value) => setReportType(value)}
-            options={REPORT_TYPES}
-            placeholder="Select report type"
-          />
-
-          <DatePicker
-            label="Start Date"
-            name="startDate"
-            value={startDate}
-            onChange={(name, value) => setStartDate(value)}
-          />
-
-          <DatePicker
-            label="End Date"
-            name="endDate"
-            value={endDate}
-            onChange={(name, value) => setEndDate(value)}
-          />
-
-          <div className="control-actions">
-            <button
-              onClick={generateReport}
-              className="generate-btn"
-              disabled={!reportType || loading}
+      {/* Filters Section */}
+      <div className="report-filters">
+        <div className="filter-row">
+          <div className="filter-group">
+            <label htmlFor="project">Project / Project Folder</label>
+            <select
+              id="project"
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
             >
-              {loading ? 'Generating...' : 'Generate Report'}
-            </button>
+              <option value="">-- Select Project --</option>
+              {projects.map(project => (
+                <option key={project.id} value={project.id}>
+                  {project.is_folder ? '📁 ' : '📄 '}{project.name}
+                </option>
+              ))}
+            </select>
           </div>
+
+          <div className="filter-group">
+            <label htmlFor="startDate">Start Date</label>
+            <input
+              type="date"
+              id="startDate"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </div>
+
+          <div className="filter-group">
+            <label htmlFor="endDate">End Date</label>
+            <input
+              type="date"
+              id="endDate"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="filter-row">
+          {selectedProject?.is_folder && (
+            <div className="filter-group checkbox">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={includeSubProjects}
+                  onChange={(e) => setIncludeSubProjects(e.target.checked)}
+                />
+                Include Sub-Projects
+              </label>
+            </div>
+          )}
+
+          <button 
+            className="btn-primary generate-btn"
+            onClick={handleGenerateReport}
+            disabled={isLoading('report')}
+          >
+            {isLoading('report') ? 'Generating...' : 'Generate Report'}
+          </button>
         </div>
       </div>
 
       {error && (
-        <ErrorMessage
-          message={error}
-          onRetry={generateReport}
-        />
+        <div className="error-message">
+          <p>{error.message}</p>
+        </div>
       )}
 
-      {loading && (
-        <LoadingSpinner message="Generating report..." />
-      )}
-
+      {/* Report Content */}
       {reportData && (
-        <div className="report-results">
-          <div className="report-header">
-            <div className="report-info">
-              <h2>{reportData.title}</h2>
-              <div className="report-meta">
-                <span>Generated: {reportData.generatedAt}</span>
-                <span>Period: {reportData.period}</span>
+        <div className="report-content">
+          {/* Project Info */}
+          <div className="report-header-info">
+            <h2>
+              {reportData.project.is_folder ? '📁' : '📄'} {reportData.project.name}
+            </h2>
+            <p className="report-period">
+              {formatMonth(reportData.period.start_date)} - {formatMonth(reportData.period.end_date)}
+            </p>
+            {reportData.sub_projects.length > 0 && (
+              <p className="sub-projects-count">
+                Includes {reportData.sub_projects.length} sub-project(s)
+              </p>
+            )}
+          </div>
+
+          {/* Summary Cards */}
+          <div className="summary-cards">
+            <div className="summary-card">
+              <div className="card-label">Total Internal Cost</div>
+              <div className="card-value cost">{formatCurrency(reportData.summary.total_internal_cost)}</div>
+            </div>
+            <div className="summary-card">
+              <div className="card-label">Total Billable</div>
+              <div className="card-value billable">{formatCurrency(reportData.summary.total_billable)}</div>
+            </div>
+            <div className="summary-card">
+              <div className="card-label">Total Margin</div>
+              <div className="card-value margin">
+                {formatCurrency(reportData.summary.total_margin)}
+                <span className="margin-percent">({reportData.summary.margin_percentage}%)</span>
               </div>
             </div>
-            <div className="report-actions">
-              <button onClick={exportToCSV} className="export-btn csv">
-                Export CSV
-              </button>
-              <button onClick={exportToPDF} className="export-btn pdf">
-                Export PDF
-              </button>
+            <div className="summary-card">
+              <div className="card-label">Staff Required</div>
+              <div className="card-value staff">
+                {reportData.summary.total_staff_count + reportData.summary.total_ghost_count}
+                <span className="staff-breakdown">
+                  ({reportData.summary.total_staff_count} real, {reportData.summary.total_ghost_count} planned)
+                </span>
+              </div>
             </div>
           </div>
 
-          {renderReportContent()}
+          {/* Gantt Chart Section */}
+          <div className="report-section gantt-section">
+            <h3>Staff Allocation Timeline</h3>
+            <div className="gantt-chart">
+              {/* Month Headers */}
+              <div className="gantt-header">
+                <div className="gantt-role-label">Role / Staff</div>
+                <div className="gantt-months">
+                  {reportData.period.months.map(month => (
+                    <div key={month} className="gantt-month-header">
+                      {formatMonth(month)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Role Rows */}
+              <div className="gantt-body">
+                {Object.entries(getEntriesByRole()).map(([roleName, roleData], roleIndex) => (
+                  <div key={roleName} className="gantt-role-group">
+                    <div className="gantt-role-row">
+                      <div className="gantt-role-label">
+                        <span 
+                          className="role-color-indicator" 
+                          style={{ backgroundColor: getRoleColor(roleIndex) }}
+                        />
+                        {roleName}
+                      </div>
+                      <div className="gantt-months-bg">
+                        {reportData.period.months.map(month => (
+                          <div key={month} className="gantt-month-cell" />
+                        ))}
+                      </div>
+                    </div>
+                    
+                    {/* Staff entries for this role */}
+                    {roleData.entries.map((entry, entryIndex) => (
+                      <div key={`${entry.type}-${entry.id}`} className="gantt-staff-row">
+                        <div className="gantt-staff-label">
+                          <span className={`staff-type-icon ${entry.type}`}>
+                            {entry.type === 'ghost' ? '👻' : '👤'}
+                          </span>
+                          {entry.name}
+                        </div>
+                        <div className="gantt-bar-container">
+                          <div 
+                            className={`gantt-bar ${entry.type}`}
+                            style={{
+                              ...getBarStyle(entry, reportData.period.months),
+                              backgroundColor: getRoleColor(roleIndex)
+                            }}
+                            title={`${entry.name}\n${entry.hours_per_week} hrs/week\nInternal: $${entry.internal_hourly_cost}/hr\nBillable: $${entry.billable_rate}/hr`}
+                          >
+                            <span className="bar-label">{entry.name}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Legend */}
+            <div className="gantt-legend">
+              <div className="legend-item">
+                <span className="legend-bar real" />
+                <span>Real Staff</span>
+              </div>
+              <div className="legend-item">
+                <span className="legend-bar ghost" />
+                <span>Planned (Ghost Staff)</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Cost Table by Role */}
+          <div className="report-section cost-table-section">
+            <div className="section-header">
+              <h3>Monthly Costs by Role</h3>
+              <div className="cost-view-toggle">
+                <button 
+                  className={costViewMode === 'internal' ? 'active' : ''}
+                  onClick={() => setCostViewMode('internal')}
+                >
+                  Internal
+                </button>
+                <button 
+                  className={costViewMode === 'billable' ? 'active' : ''}
+                  onClick={() => setCostViewMode('billable')}
+                >
+                  Billable
+                </button>
+                <button 
+                  className={costViewMode === 'both' ? 'active' : ''}
+                  onClick={() => setCostViewMode('both')}
+                >
+                  Both
+                </button>
+              </div>
+            </div>
+
+            <div className="cost-table-wrapper">
+              <table className="cost-table">
+                <thead>
+                  <tr>
+                    <th className="role-column">Role</th>
+                    {reportData.period.months.map(month => (
+                      <th key={month}>{formatMonth(month)}</th>
+                    ))}
+                    <th className="total-column">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reportData.roles.map((role, index) => (
+                    <tr key={role.role_id || index}>
+                      <td className="role-column">
+                        <span 
+                          className="role-color-indicator" 
+                          style={{ backgroundColor: getRoleColor(index) }}
+                        />
+                        {role.role_name}
+                      </td>
+                      {reportData.period.months.map(month => {
+                        const monthData = role.monthly_costs[month] || { internal: 0, billable: 0 };
+                        return (
+                          <td key={month} className={monthData.internal === 0 ? 'zero-value' : ''}>
+                            {costViewMode === 'internal' && formatCurrency(monthData.internal)}
+                            {costViewMode === 'billable' && formatCurrency(monthData.billable)}
+                            {costViewMode === 'both' && (
+                              <div className="dual-cost">
+                                <span className="internal">{formatCurrency(monthData.internal)}</span>
+                                <span className="billable">{formatCurrency(monthData.billable)}</span>
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="total-column">
+                        {costViewMode === 'internal' && formatCurrency(role.total_internal)}
+                        {costViewMode === 'billable' && formatCurrency(role.total_billable)}
+                        {costViewMode === 'both' && (
+                          <div className="dual-cost">
+                            <span className="internal">{formatCurrency(role.total_internal)}</span>
+                            <span className="billable">{formatCurrency(role.total_billable)}</span>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="totals-row">
+                    <td className="role-column"><strong>Monthly Totals</strong></td>
+                    {reportData.period.months.map(month => {
+                      const monthData = reportData.monthly_breakdown[month] || { internal_cost: 0, billable: 0 };
+                      return (
+                        <td key={month}>
+                          {costViewMode === 'internal' && formatCurrency(monthData.internal_cost)}
+                          {costViewMode === 'billable' && formatCurrency(monthData.billable)}
+                          {costViewMode === 'both' && (
+                            <div className="dual-cost">
+                              <span className="internal">{formatCurrency(monthData.internal_cost)}</span>
+                              <span className="billable">{formatCurrency(monthData.billable)}</span>
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td className="total-column">
+                      {costViewMode === 'internal' && formatCurrency(reportData.summary.total_internal_cost)}
+                      {costViewMode === 'billable' && formatCurrency(reportData.summary.total_billable)}
+                      {costViewMode === 'both' && (
+                        <div className="dual-cost">
+                          <span className="internal">{formatCurrency(reportData.summary.total_internal_cost)}</span>
+                          <span className="billable">{formatCurrency(reportData.summary.total_billable)}</span>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          {/* Staff Distribution List */}
+          <div className="report-section staff-list-section">
+            <h3>Staff Distribution</h3>
+            <div className="staff-list">
+              {reportData.staff_entries.map((entry, index) => (
+                <div key={`${entry.type}-${entry.id}`} className={`staff-entry ${entry.type}`}>
+                  <div className="staff-entry-header">
+                    <span className={`type-badge ${entry.type}`}>
+                      {entry.type === 'ghost' ? '👻 Planned' : '👤 Staff'}
+                    </span>
+                    <h4>{entry.name}</h4>
+                    <span className="role-badge">{entry.role_name}</span>
+                  </div>
+                  <div className="staff-entry-details">
+                    <div className="detail-item">
+                      <span className="label">Project:</span>
+                      <span className="value">{entry.project_name}</span>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">Period:</span>
+                      <span className="value">{entry.start_date} to {entry.end_date}</span>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">Hours/Week:</span>
+                      <span className="value">{entry.hours_per_week}</span>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">Allocation:</span>
+                      <span className="value">{entry.allocation_percentage}%</span>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">Internal Rate:</span>
+                      <span className="value">${entry.internal_hourly_cost}/hr</span>
+                    </div>
+                    <div className="detail-item">
+                      <span className="label">Billable Rate:</span>
+                      <span className="value">${entry.billable_rate}/hr</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!reportData && !isLoading('report') && (
+        <div className="empty-state">
+          <div className="empty-icon">📊</div>
+          <h3>Generate a Staff Planning Report</h3>
+          <p>Select a project or project folder and click "Generate Report" to view detailed staff planning data including costs, allocations, and timeline.</p>
         </div>
       )}
     </div>

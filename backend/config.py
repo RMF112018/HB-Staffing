@@ -41,6 +41,18 @@ class ProductionConfig(Config):
     JWT_ACCESS_TOKEN_EXPIRES = int(os.environ.get('JWT_ACCESS_TOKEN_EXPIRES', 900))  # 15 minutes
     JWT_REFRESH_TOKEN_EXPIRES = int(os.environ.get('JWT_REFRESH_TOKEN_EXPIRES', 604800))  # 7 days
 
+    @classmethod
+    def init_app(cls, app):
+        """Initialize production app with validation"""
+        # Require SECRET_KEY and JWT_SECRET_KEY from environment in production
+        if not os.environ.get('SECRET_KEY'):
+            raise ValueError('SECRET_KEY must be set in production environment')
+        if not os.environ.get('JWT_SECRET_KEY'):
+            raise ValueError('JWT_SECRET_KEY must be set in production environment')
+        
+        app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
+        app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY')
+
 class TestingConfig(Config):
     """Testing configuration"""
     TESTING = True

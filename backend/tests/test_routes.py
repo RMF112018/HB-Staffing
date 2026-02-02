@@ -10,7 +10,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import create_app
-from models import db, Staff, Project, Assignment, User
+from models import db, Staff, Project, Assignment, User, Role
 
 
 @pytest.fixture
@@ -50,14 +50,33 @@ def auth_headers(client):
 
 
 @pytest.fixture
-def test_data(app):
+def test_roles(app):
+    """Create test roles for API testing."""
+    with app.app_context():
+        role1 = Role(name="Manager", hourly_cost=70.0, description="Project management")
+        role2 = Role(name="Estimator", hourly_cost=60.0, description="Cost estimation")
+        role3 = Role(name="Developer", hourly_cost=55.0, description="Software development")
+        db.session.add(role1)
+        db.session.add(role2)
+        db.session.add(role3)
+        db.session.commit()
+        return {'roles': [role1, role2, role3]}
+
+
+@pytest.fixture
+def test_data(app, test_roles):
     """Create test data for API testing."""
     with app.app_context():
-        # Create test staff
-        staff1 = Staff(name="John Doe", role="Manager", hourly_rate=75.0)
-        staff2 = Staff(name="Jane Smith", role="Estimator", hourly_rate=65.0)
+        # Get the roles
+        manager_role = Role.query.filter_by(name="Manager").first()
+        estimator_role = Role.query.filter_by(name="Estimator").first()
+
+        # Create test staff with role_id
+        staff1 = Staff(name="John Doe", role_id=manager_role.id, hourly_rate=75.0)
+        staff2 = Staff(name="Jane Smith", role_id=estimator_role.id, hourly_rate=65.0)
         db.session.add(staff1)
         db.session.add(staff2)
+        db.session.commit()
 
         # Create test projects
         project1 = Project(
@@ -73,11 +92,12 @@ def test_data(app):
         )
         db.session.add(project1)
         db.session.add(project2)
+        db.session.commit()
 
         # Create test assignment
         assignment1 = Assignment(
-            staff_id=1,  # Will be set after commit
-            project_id=1,
+            staff_id=staff1.id,
+            project_id=project1.id,
             start_date=date(2024, 1, 1),
             end_date=date(2024, 3, 31),
             hours_per_week=40.0
@@ -89,7 +109,8 @@ def test_data(app):
         return {
             'staff': [staff1, staff2],
             'projects': [project1, project2],
-            'assignments': [assignment1]
+            'assignments': [assignment1],
+            'roles': test_roles['roles']
         }
 
 
@@ -106,6 +127,125 @@ class TestHealthEndpoint:
         assert 'message' in data
 
 
+class TestRoleEndpoints:
+    """Test role API endpoints"""
+
+    def test_get_roles_list(self, client, test_roles):
+        """Test getting list of roles (public endpoint)"""
+        response = client.get('/api/roles')
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert isinstance(data, list)
+        assert len(data) >= 3  # At least our test data
+
+    def test_get_roles_active_only(self, client, auth_headers, test_roles):
+        """Test getting only active roles"""
+        # First deactivate one role
+        with client.application.app_context():
+            role = Role.query.first()
+            role.is_active = False
+            db.session.commit()
+
+        response = client.get('/api/roles?active_only=true')
+        assert response.status_code == 200
+
+        data = response.get_json()
+        # Should have fewer roles than total
+        for role in data:
+            assert role['is_active'] == True
+
+    def test_create_role(self, client, auth_headers):
+        """Test creating a new role"""
+        role_data = {
+            'name': 'New Role',
+            'hourly_cost': 50.0,
+            'description': 'A new test role'
+        }
+
+        response = client.post('/api/roles', json=role_data, headers=auth_headers)
+        assert response.status_code == 201
+
+        data = response.get_json()
+        assert data['name'] == 'New Role'
+        assert data['hourly_cost'] == 50.0
+        assert data['is_active'] == True
+
+    def test_create_role_duplicate_name(self, client, auth_headers, test_roles):
+        """Test creating role with duplicate name fails"""
+        role_data = {
+            'name': 'Manager',  # Already exists
+            'hourly_cost': 50.0
+        }
+
+        response = client.post('/api/roles', json=role_data, headers=auth_headers)
+        assert response.status_code == 409  # Conflict
+
+    def test_create_role_validation_error(self, client, auth_headers):
+        """Test creating role with missing required fields"""
+        incomplete_data = {'name': 'Incomplete Role'}
+
+        response = client.post('/api/roles', json=incomplete_data, headers=auth_headers)
+        assert response.status_code == 400
+
+        data = response.get_json()
+        assert 'error' in data
+
+    def test_get_role_by_id(self, client, test_roles):
+        """Test getting a specific role"""
+        with client.application.app_context():
+            role = Role.query.filter_by(name="Manager").first()
+            role_id = role.id
+
+        response = client.get(f'/api/roles/{role_id}')
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert data['name'] == 'Manager'
+
+    def test_get_role_not_found(self, client):
+        """Test getting non-existent role"""
+        response = client.get('/api/roles/99999')
+        assert response.status_code == 404
+
+    def test_update_role(self, client, auth_headers, test_roles):
+        """Test updating a role"""
+        with client.application.app_context():
+            role = Role.query.filter_by(name="Manager").first()
+            role_id = role.id
+
+        update_data = {
+            'name': 'Senior Manager',
+            'hourly_cost': 85.0,
+            'description': 'Updated description'
+        }
+
+        response = client.put(f'/api/roles/{role_id}', json=update_data, headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert data['name'] == 'Senior Manager'
+        assert data['hourly_cost'] == 85.0
+
+    def test_delete_role_with_no_staff(self, client, auth_headers, test_roles):
+        """Test deleting a role with no staff assigned"""
+        with client.application.app_context():
+            role = Role.query.filter_by(name="Developer").first()  # No staff assigned
+            role_id = role.id
+
+        response = client.delete(f'/api/roles/{role_id}', headers=auth_headers)
+        assert response.status_code == 200
+
+    def test_delete_role_with_staff_fails(self, client, auth_headers, test_data):
+        """Test deleting a role with staff assigned fails"""
+        with client.application.app_context():
+            role = Role.query.filter_by(name="Manager").first()  # Has staff assigned
+            role_id = role.id
+
+        response = client.delete(f'/api/roles/{role_id}', headers=auth_headers)
+        assert response.status_code == 409  # Conflict
+
+
 class TestStaffEndpoints:
     """Test staff API endpoints"""
 
@@ -118,12 +258,16 @@ class TestStaffEndpoints:
         assert isinstance(data, list)
         assert len(data) >= 2  # At least our test data
 
-    def test_create_staff(self, client, auth_headers):
+    def test_create_staff(self, client, auth_headers, test_roles):
         """Test creating a new staff member"""
+        with client.application.app_context():
+            dev_role = Role.query.filter_by(name="Developer").first()
+            role_id = dev_role.id
+
         staff_data = {
             'name': 'New Employee',
-            'role': 'Developer',
-            'hourly_rate': 60.0
+            'role_id': role_id,
+            'hourly_rate': 70.0  # Billable rate (higher than role cost)
         }
 
         response = client.post('/api/staff', json=staff_data, headers=auth_headers)
@@ -132,7 +276,9 @@ class TestStaffEndpoints:
         data = response.get_json()
         assert data['name'] == 'New Employee'
         assert data['role'] == 'Developer'
-        assert data['hourly_rate'] == 60.0
+        assert data['role_id'] == role_id
+        assert data['hourly_rate'] == 70.0
+        assert data['role_hourly_cost'] == 55.0  # From role
 
     def test_create_staff_validation_error(self, client, auth_headers):
         """Test creating staff with missing required fields"""
@@ -144,6 +290,17 @@ class TestStaffEndpoints:
         data = response.get_json()
         assert 'error' in data
 
+    def test_create_staff_invalid_role_id(self, client, auth_headers):
+        """Test creating staff with invalid role_id fails"""
+        staff_data = {
+            'name': 'Invalid Role Staff',
+            'role_id': 99999,  # Non-existent role
+            'hourly_rate': 50.0
+        }
+
+        response = client.post('/api/staff', json=staff_data, headers=auth_headers)
+        assert response.status_code == 404  # Role not found
+
     def test_get_staff_by_id(self, client, auth_headers, test_data):
         """Test getting a specific staff member"""
         staff_id = test_data['staff'][0].id
@@ -154,6 +311,8 @@ class TestStaffEndpoints:
         data = response.get_json()
         assert data['id'] == staff_id
         assert data['name'] == 'John Doe'
+        assert data['role'] == 'Manager'  # Role name from relationship
+        assert 'role_hourly_cost' in data
 
     def test_get_staff_not_found(self, client, auth_headers):
         """Test getting non-existent staff"""
@@ -166,8 +325,10 @@ class TestStaffEndpoints:
     def test_update_staff(self, client, auth_headers, test_data):
         """Test updating a staff member"""
         staff_id = test_data['staff'][0].id
+        role_id = test_data['staff'][0].role_id
         update_data = {
             'name': 'Updated Name',
+            'role_id': role_id,
             'hourly_rate': 80.0
         }
 
@@ -179,8 +340,9 @@ class TestStaffEndpoints:
         assert data['hourly_rate'] == 80.0
 
     def test_delete_staff(self, client, auth_headers, test_data):
-        """Test deleting a staff member"""
-        staff_id = test_data['staff'][0].id
+        """Test deleting a staff member without assignments"""
+        # Use staff2 which doesn't have assignments
+        staff_id = test_data['staff'][1].id
 
         response = client.delete(f'/api/staff/{staff_id}', headers=auth_headers)
         assert response.status_code == 200

@@ -5,7 +5,9 @@ export const useApiError = () => {
   const [isRetrying, setIsRetrying] = useState(false);
 
   const handleApiError = useCallback((err, operation = null) => {
-    console.error('API Error:', err);
+    if (import.meta.env.DEV) {
+      console.error('API Error:', err);
+    }
 
     let errorMessage = 'An unexpected error occurred';
     let errorType = 'unknown';
@@ -107,6 +109,7 @@ export const useApiError = () => {
     error,
     isRetrying,
     handleApiError,
+    handleError: handleApiError, // Alias for backward compatibility
     clearError,
     retryOperation
   };
