@@ -1,9 +1,12 @@
 from flask import Flask, jsonify, current_app, request
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from config import config
 from db import db
 import logging
 from errors import register_error_handlers
+from auth import init_auth, create_default_admin
 
 
 def configure_logging(app, config_name='development'):
@@ -47,6 +50,16 @@ def create_app(config_name='development'):
     db.init_app(app)
     CORS(app, origins=app.config['CORS_ORIGINS'])
 
+    # Initialize rate limiter
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=["200 per day", "50 per hour"]
+    )
+
+    # Initialize authentication
+    init_auth(app)
+
     # Register error handlers
     register_error_handlers(app)
 
@@ -69,9 +82,11 @@ def create_app(config_name='development'):
             'message': 'HB-Staffing API is running'
         })
 
-    # Create tables on startup
+    # Initialize and seed database on startup
     with app.app_context():
-        db.create_all()
+        from database import init_db, seed_database
+        init_db()
+        seed_database()
 
     # Register blueprints
     from routes import api

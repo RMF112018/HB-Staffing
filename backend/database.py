@@ -1,8 +1,10 @@
-from models import Staff, Project, Assignment
+from models import Staff, Project, Assignment, User
 import json
 
 def init_db():
     """Initialize the database and create all tables"""
+    # Import all models to ensure they are registered with SQLAlchemy
+    from models import Staff, Project, Assignment, User
     from models import db
     db.create_all()
     print("Database initialized successfully")
@@ -132,6 +134,21 @@ def seed_database():
 
     db.session.commit()
     print("Database seeded with sample data")
+
+    # Create default admin user
+    try:
+        if not User.query.filter_by(role='admin').first():
+            admin = User(
+                username='admin',
+                email='admin@hb-staffing.com',
+                password='admin123!',
+                role='admin'
+            )
+            db.session.add(admin)
+            db.session.commit()
+            print("Default admin user created (username: admin, password: admin123!)")
+    except Exception as e:
+        print(f"Could not create default admin user: {e}")
 
 # CRUD helper functions
 def get_staff_by_id(staff_id):

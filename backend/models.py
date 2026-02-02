@@ -1,6 +1,7 @@
 from datetime import datetime
 from db import db
 import json
+import bcrypt
 
 class Staff(db.Model):
     """Staff member model"""
@@ -154,3 +155,71 @@ class Assignment(db.Model):
         if self.staff_member:
             return self.total_hours * self.staff_member.hourly_rate
         return 0
+
+
+class User(db.Model):
+    """User model for authentication and authorization"""
+    __tablename__ = 'users'
+
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(50), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default='preconstruction')  # preconstruction, leadership, admin
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login = db.Column(db.DateTime, nullable=True)
+
+    def __init__(self, username, email, password, role='preconstruction'):
+        self.username = username
+        self.email = email
+        self.role = role
+        self.set_password(password)
+
+    def set_password(self, password):
+        """Hash and set the password"""
+        self.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+    def check_password(self, password):
+        """Verify the password"""
+        return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
+
+    def to_dict(self, include_sensitive=False):
+        """Convert user to dictionary"""
+        data = {
+            'id': self.id,
+            'username': self.username,
+            'email': self.email,
+            'role': self.role,
+            'is_active': self.is_active,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_login': self.last_login.isoformat() if self.last_login else None
+        }
+        if include_sensitive:
+            data['password_hash'] = self.password_hash
+        return data
+
+    def has_role(self, role):
+        """Check if user has specific role"""
+        return self.role == role
+
+    def has_permission(self, permission):
+        """Check if user has permission based on role"""
+        role_permissions = {
+            'admin': ['read', 'write', 'delete', 'manage_users', 'view_reports', 'export_data'],
+            'leadership': ['read', 'write', 'delete', 'view_reports', 'export_data'],
+            'preconstruction': ['read', 'write', 'view_basic_reports']
+        }
+        return permission in role_permissions.get(self.role, [])
+
+    @staticmethod
+    def get_by_username(username):
+        """Get user by username"""
+        return User.query.filter_by(username=username).first()
+
+    @staticmethod
+    def get_by_email(email):
+        """Get user by email"""
+        return User.query.filter_by(email=email).first()

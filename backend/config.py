@@ -7,8 +7,9 @@ load_dotenv()
 class Config:
     """Base configuration class"""
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or 'dev-jwt-secret-key-change-in-production'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:3000').split(',')
+    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://localhost:5173').split(',')
 
 class DevelopmentConfig(Config):
     """Development configuration"""

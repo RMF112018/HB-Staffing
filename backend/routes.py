@@ -6,6 +6,10 @@ from errors import (
     validate_required, validate_date_range, validate_positive_number, validate_enum,
     safe_db_operation, log_api_request, log_api_response
 )
+from auth import (
+    login_user, refresh_access_token, register_user,
+    require_role, require_permission, optional_auth, get_current_user
+)
 
 api = Blueprint('api', __name__)
 
@@ -111,6 +115,7 @@ def validate_assignment_data(data):
 
 @api.route('/staff', methods=['GET'])
 @handle_errors
+@require_permission('read')
 def get_staff():
     """Get all staff members with optional filtering"""
     db, Staff, Project, Assignment = get_models()
@@ -163,6 +168,7 @@ def get_staff():
 
 @api.route('/staff', methods=['POST'])
 @handle_errors
+@require_permission('write')
 def create_staff():
     """Create a new staff member"""
     db, Staff, Project, Assignment = get_models()
@@ -197,6 +203,7 @@ def create_staff():
 
 @api.route('/staff/<int:staff_id>', methods=['GET'])
 @handle_errors
+@require_permission('read')
 def get_staff_by_id(staff_id):
     """Get a specific staff member by ID"""
     db, Staff, Project, Assignment = get_models()
@@ -209,6 +216,7 @@ def get_staff_by_id(staff_id):
 
 @api.route('/staff/<int:staff_id>', methods=['PUT'])
 @handle_errors
+@require_permission('write')
 def update_staff(staff_id):
     """Update a staff member"""
     db, Staff, Project, Assignment = get_models()
@@ -243,6 +251,7 @@ def update_staff(staff_id):
 
 @api.route('/staff/<int:staff_id>', methods=['DELETE'])
 @handle_errors
+@require_permission('delete')
 def delete_staff(staff_id):
     """Delete a staff member"""
     db, Staff, Project, Assignment = get_models()
@@ -582,3 +591,148 @@ def get_capacity_analysis():
 
     analysis = calculate_capacity_analysis(staff_id, start, end)
     return jsonify(analysis)
+
+
+# AUTHENTICATION ROUTES
+
+@api.route('/auth/login', methods=['POST'])
+@handle_errors
+def login():
+    """Authenticate user and return tokens"""
+    data = request.get_json()
+
+    validate_required(data, ['username', 'password'])
+
+    result = login_user(data['username'], data['password'])
+    return jsonify(result), 200
+
+
+@api.route('/auth/refresh', methods=['POST'])
+@handle_errors
+def refresh():
+    """Refresh access token"""
+    result = refresh_access_token()
+    return jsonify(result), 200
+
+
+@api.route('/auth/register', methods=['POST'])
+@handle_errors
+@require_role('admin')
+def register():
+    """Register a new user (admin only)"""
+    data = request.get_json()
+
+    validate_required(data, ['username', 'email', 'password'])
+
+    user = register_user(
+        username=data['username'],
+        email=data['email'],
+        password=data['password'],
+        role=data.get('role', 'preconstruction')
+    )
+
+    return jsonify({
+        'message': 'User registered successfully',
+        'user': user
+    }), 201
+
+
+@api.route('/auth/me', methods=['GET'])
+@handle_errors
+@require_permission('read')
+def get_current_user_info():
+    """Get current user information"""
+    user = get_current_user()
+    return jsonify({'user': user.to_dict()}), 200
+
+
+@api.route('/auth/logout', methods=['POST'])
+@handle_errors
+@require_permission('read')
+def logout():
+    """Logout user (client should discard tokens)"""
+    # In a JWT system, logout is typically handled client-side
+    # by discarding the tokens. For server-side logout tracking,
+    # you could implement a token blacklist, but that's complex.
+    return jsonify({'message': 'Logged out successfully'}), 200
+
+
+# USER MANAGEMENT ROUTES (Admin only)
+
+@api.route('/users', methods=['GET'])
+@handle_errors
+@require_role('admin')
+def get_users():
+    """Get all users (admin only)"""
+    db, Staff, Project, Assignment = get_models()
+    from models import User
+
+    users = User.query.all()
+    return jsonify([user.to_dict() for user in users]), 200
+
+
+@api.route('/users/<int:user_id>', methods=['GET'])
+@handle_errors
+@require_role('admin')
+def get_user(user_id):
+    """Get specific user (admin only)"""
+    from models import User
+
+    user = User.query.get(user_id)
+    if not user:
+        raise NotFoundError("User", user_id)
+
+    return jsonify(user.to_dict()), 200
+
+
+@api.route('/users/<int:user_id>', methods=['PUT'])
+@handle_errors
+@require_role('admin')
+def update_user(user_id):
+    """Update user (admin only)"""
+    from models import User
+
+    user = User.query.get(user_id)
+    if not user:
+        raise NotFoundError("User", user_id)
+
+    data = request.get_json()
+    allowed_fields = ['email', 'role', 'is_active']
+
+    for field in allowed_fields:
+        if field in data:
+            if field == 'role':
+                validate_enum(data[field], ['preconstruction', 'leadership', 'admin'], 'role')
+            setattr(user, field, data[field])
+
+    if 'password' in data:
+        user.set_password(data['password'])
+
+    safe_db_operation(db.session.commit, "Failed to update user")
+
+    return jsonify({
+        'message': 'User updated successfully',
+        'user': user.to_dict()
+    }), 200
+
+
+@api.route('/users/<int:user_id>', methods=['DELETE'])
+@handle_errors
+@require_role('admin')
+def delete_user(user_id):
+    """Delete user (admin only)"""
+    db, Staff, Project, Assignment = get_models()
+    from models import User
+
+    user = User.query.get(user_id)
+    if not user:
+        raise NotFoundError("User", user_id)
+
+    # Prevent deleting the last admin
+    admin_count = User.query.filter_by(role='admin').count()
+    if user.role == 'admin' and admin_count <= 1:
+        raise ConflictError("Cannot delete the last admin user")
+
+    safe_db_operation(lambda: (db.session.delete(user), db.session.commit())[1], "Failed to delete user")
+
+    return jsonify({'message': 'User deleted successfully'}), 200
