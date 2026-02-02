@@ -7,6 +7,7 @@ from db import db
 import logging
 from errors import register_error_handlers
 from auth import init_auth, create_default_admin
+from flask_migrate import Migrate
 
 
 def configure_logging(app, config_name='development'):
@@ -59,6 +60,9 @@ def create_app(config_name='development'):
 
     # Initialize authentication
     init_auth(app)
+
+    # Initialize Flask-Migrate
+    migrate = Migrate(app, db)
 
     # Register error handlers
     register_error_handlers(app)

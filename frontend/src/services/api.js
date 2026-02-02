@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create axios instance with enhanced configuration
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api',
   timeout: 15000, // Increased timeout
   headers: {
     'Content-Type': 'application/json',
