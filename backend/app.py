@@ -2,6 +2,36 @@ from flask import Flask, jsonify, current_app, request
 from flask_cors import CORS
 from config import config
 from db import db
+import logging
+from errors import register_error_handlers
+
+
+def configure_logging(app, config_name='development'):
+    """Configure logging for the application"""
+    # Clear existing handlers
+    for handler in app.logger.handlers[:]:
+        app.logger.removeHandler(handler)
+
+    # Set log level
+    log_level = logging.INFO if app.config.get('DEBUG', False) else logging.WARNING
+    app.logger.setLevel(log_level)
+
+    # Create console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(log_level)
+
+    # Create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    console_handler.setFormatter(formatter)
+
+    # Add handler to logger
+    app.logger.addHandler(console_handler)
+
+    # Log application startup
+    app.logger.info(f"HB-Staffing API starting in {config_name} mode")
+
 
 def create_app(config_name='development'):
     """Application factory pattern"""
@@ -10,9 +40,15 @@ def create_app(config_name='development'):
     # Load configuration
     app.config.from_object(config[config_name])
 
+    # Configure logging
+    configure_logging(app, config_name)
+
     # Initialize extensions
     db.init_app(app)
     CORS(app, origins=app.config['CORS_ORIGINS'])
+
+    # Register error handlers
+    register_error_handlers(app)
 
     # Request logging middleware
     @app.before_request

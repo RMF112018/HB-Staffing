@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Bar, Pie, Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -15,6 +15,9 @@ import {
 import { staffAPI, projectAPI, assignmentAPI, forecastAPI } from '../services/api';
 import LoadingSpinner from './common/LoadingSpinner';
 import ErrorMessage from './common/ErrorMessage';
+import SkeletonLoader from './common/SkeletonLoader';
+import { useLoading } from '../contexts/LoadingContext';
+import { useApiError } from '../hooks/useApiError';
 import './Dashboard.css';
 
 // Register Chart.js components
@@ -31,6 +34,9 @@ ChartJS.register(
 );
 
 const Dashboard = () => {
+  const { withLoading, isLoading } = useLoading();
+  const { error, handleApiError, clearError, retryOperation } = useApiError();
+
   const [stats, setStats] = useState({
     totalStaff: 0,
     activeProjects: 0,
@@ -47,29 +53,36 @@ const Dashboard = () => {
     staffByRole: null,
     projectTimeline: null
   });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
 
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    withLoading('dashboard_initial', loadDashboardData);
+  }, [loadDashboardData, withLoading]);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     try {
-      setLoading(true);
-      setError(null);
+      clearError();
 
-      // Load data from multiple endpoints
-      const [staffResponse, projectsResponse, assignmentsResponse] = await Promise.all([
+
+      // Load data from multiple endpoints with individual error handling
+      const [staffRes, projectsRes, assignmentsRes] = await Promise.allSettled([
         staffAPI.getAll(),
         projectAPI.getAll(),
         assignmentAPI.getAll()
       ]);
 
-      const staff = staffResponse.data;
-      const projects = projectsResponse.data;
-      const assignments = assignmentsResponse.data;
+      const staff = staffRes.status === 'fulfilled' ? staffRes.value.data : [];
+      const projects = projectsRes.status === 'fulfilled' ? projectsRes.value.data : [];
+      const assignments = assignmentsRes.status === 'fulfilled' ? assignmentsRes.value.data : [];
+
+      // Check for failed requests and log warnings
+      const failedRequests = [staffRes, projectsRes, assignmentsRes]
+        .map((res, index) => ({ res, index }))
+        .filter(({ res }) => res.status === 'rejected');
+
+      if (failedRequests.length > 0) {
+        console.warn('Some dashboard data requests failed:', failedRequests[0].res.reason);
+      }
 
       // Calculate comprehensive stats
       const activeProjects = projects.filter(p => p.status === 'active' || p.status === 'planning').length;
@@ -166,12 +179,9 @@ const Dashboard = () => {
       setLastUpdated(new Date());
 
     } catch (err) {
-      console.error('Error loading dashboard data:', err);
-      setError('Failed to load dashboard data');
-    } finally {
-      setLoading(false);
+      handleApiError(err, 'load_dashboard_data');
     }
-  };
+  }, [clearError, handleApiError]);
 
   if (loading) {
     return (
@@ -186,8 +196,16 @@ const Dashboard = () => {
     return (
       <div className="dashboard">
         <h1>Dashboard</h1>
-        <div className="error">{error}</div>
-        <button onClick={loadDashboardData}>Retry</button>
+        <ErrorMessage
+          message={error.message}
+          type={error.type}
+          onRetry={() => retryOperation(loadDashboardData)}
+          action={
+            <button onClick={() => window.location.reload()}>
+              Reload Page
+            </button>
+          }
+        />
       </div>
     );
   }
@@ -197,8 +215,12 @@ const Dashboard = () => {
       <div className="dashboard-header">
         <h1>HB-Staffing Dashboard</h1>
         <div className="dashboard-controls">
-          <button onClick={loadDashboardData} className="refresh-button" disabled={loading}>
-            {loading ? 'Refreshing...' : 'Refresh Data'}
+          <button
+            onClick={() => withLoading('dashboard_refresh', loadDashboardData)}
+            className="refresh-button"
+            disabled={isLoading('dashboard_refresh')}
+          >
+            {isLoading('dashboard_refresh') ? 'Refreshing...' : 'Refresh Data'}
           </button>
           {lastUpdated && (
             <span className="last-updated">
@@ -211,34 +233,58 @@ const Dashboard = () => {
       <div className="stats-grid">
         <div className="stat-card">
           <h3>Total Staff</h3>
-          <div className="stat-value">{stats.totalStaff}</div>
-          <div className="stat-subtitle">
-            {Object.keys(stats.staffByRole).length} different roles
-          </div>
+          {isLoading('dashboard_initial') ? (
+            <SkeletonLoader type="text" width="60px" height="2rem" />
+          ) : (
+            <>
+              <div className="stat-value">{stats.totalStaff}</div>
+              <div className="stat-subtitle">
+                {Object.keys(stats.staffByRole).length} different roles
+              </div>
+            </>
+          )}
         </div>
 
         <div className="stat-card">
           <h3>Active Projects</h3>
-          <div className="stat-value">{stats.activeProjects}</div>
-          <div className="stat-subtitle">
-            of {stats.totalStaff + stats.activeProjects + stats.totalAssignments} total records
-          </div>
+          {isLoading('dashboard_initial') ? (
+            <SkeletonLoader type="text" width="60px" height="2rem" />
+          ) : (
+            <>
+              <div className="stat-value">{stats.activeProjects}</div>
+              <div className="stat-subtitle">
+                of {stats.totalStaff + stats.activeProjects + stats.totalAssignments} total records
+              </div>
+            </>
+          )}
         </div>
 
         <div className="stat-card">
           <h3>Total Assignments</h3>
-          <div className="stat-value">{stats.totalAssignments}</div>
-          <div className="stat-subtitle">
-            {stats.totalAssignments > 0 ? Math.round(stats.totalAssignments / stats.activeProjects) : 0} per project avg
-          </div>
+          {isLoading('dashboard_initial') ? (
+            <SkeletonLoader type="text" width="60px" height="2rem" />
+          ) : (
+            <>
+              <div className="stat-value">{stats.totalAssignments}</div>
+              <div className="stat-subtitle">
+                {stats.totalAssignments > 0 ? Math.round(stats.totalAssignments / stats.activeProjects) : 0} per project avg
+              </div>
+            </>
+          )}
         </div>
 
         <div className="stat-card">
           <h3>Total Budget</h3>
-          <div className="stat-value">${stats.totalBudget?.toLocaleString() || '0'}</div>
-          <div className="stat-subtitle">
-            ${stats.utilizedBudget?.toLocaleString() || '0'} utilized
-          </div>
+          {isLoading('dashboard_initial') ? (
+            <SkeletonLoader type="text" width="80px" height="2rem" />
+          ) : (
+            <>
+              <div className="stat-value">${stats.totalBudget?.toLocaleString() || '0'}</div>
+              <div className="stat-subtitle">
+                ${stats.utilizedBudget?.toLocaleString() || '0'} utilized
+              </div>
+            </>
+          )}
         </div>
       </div>
 

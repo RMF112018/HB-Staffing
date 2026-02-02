@@ -1,6 +1,11 @@
 from flask import Blueprint, request, jsonify, current_app
 from datetime import datetime
 import json
+from errors import (
+    ValidationError, NotFoundError, ConflictError,
+    validate_required, validate_date_range, validate_positive_number, validate_enum,
+    safe_db_operation, log_api_request, log_api_response
+)
 
 api = Blueprint('api', __name__)
 
@@ -16,97 +21,91 @@ def handle_errors(f):
     def wrapper(*args, **kwargs):
         try:
             return f(*args, **kwargs)
-        except ValueError as e:
-            return jsonify({'error': 'Validation error', 'message': str(e)}), 400
-        except KeyError as e:
-            return jsonify({'error': 'Missing field', 'message': str(e)}), 400
+        except (ValidationError, NotFoundError, ConflictError):
+            # These are already handled by the global error handler
+            raise
         except Exception as e:
-            current_app.logger.error(f"Unexpected error: {str(e)}")
-            return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred'}), 500
+            current_app.logger.error(f"Unexpected error in {f.__name__}: {str(e)}")
+            raise  # Let the global error handler deal with it
     wrapper.__name__ = f.__name__
     return wrapper
 
 # Validation helpers
 def validate_staff_data(data):
     """Validate staff data"""
-    required_fields = ['name', 'role', 'hourly_rate']
-    for field in required_fields:
-        if field not in data:
-            raise ValueError(f"Missing required field: {field}")
+    validate_required(data, ['name', 'role', 'hourly_rate'])
 
-    if not isinstance(data['hourly_rate'], (int, float)) or data['hourly_rate'] <= 0:
-        raise ValueError("hourly_rate must be a positive number")
+    validate_positive_number(data['hourly_rate'], 'hourly_rate')
 
-    # Optional date validation
+    # Optional date validation and range check
     if 'availability_start' in data and data['availability_start']:
         try:
             datetime.fromisoformat(data['availability_start'])
         except ValueError:
-            raise ValueError("Invalid date format for availability_start")
+            raise ValidationError("Invalid date format for availability_start")
 
     if 'availability_end' in data and data['availability_end']:
         try:
             datetime.fromisoformat(data['availability_end'])
         except ValueError:
-            raise ValueError("Invalid date format for availability_end")
+            raise ValidationError("Invalid date format for availability_end")
+
+    if data.get('availability_start') and data.get('availability_end'):
+        start_date = datetime.fromisoformat(data['availability_start']).date()
+        end_date = datetime.fromisoformat(data['availability_end']).date()
+        validate_date_range(start_date, end_date, "availability_start", "availability_end")
 
 def validate_project_data(data):
     """Validate project data"""
-    required_fields = ['name', 'status']
-    for field in required_fields:
-        if field not in data:
-            raise ValueError(f"Missing required field: {field}")
+    validate_required(data, ['name', 'status'])
 
-    valid_statuses = ['planning', 'active', 'completed', 'cancelled', 'on-hold']
-    if data['status'] not in valid_statuses:
-        raise ValueError(f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
+    validate_enum(data['status'], ['planning', 'active', 'completed', 'cancelled', 'on-hold'], 'status')
 
     # Optional date validation
     if 'start_date' in data and data['start_date']:
         try:
             datetime.fromisoformat(data['start_date'])
         except ValueError:
-            raise ValueError("Invalid date format for start_date")
+            raise ValidationError("Invalid date format for start_date")
 
     if 'end_date' in data and data['end_date']:
         try:
             datetime.fromisoformat(data['end_date'])
         except ValueError:
-            raise ValueError("Invalid date format for end_date")
+            raise ValidationError("Invalid date format for end_date")
+
+    if data.get('start_date') and data.get('end_date'):
+        start_date = datetime.fromisoformat(data['start_date']).date()
+        end_date = datetime.fromisoformat(data['end_date']).date()
+        validate_date_range(start_date, end_date, "start_date", "end_date")
 
     if 'budget' in data and data['budget'] is not None:
         if not isinstance(data['budget'], (int, float)) or data['budget'] < 0:
-            raise ValueError("budget must be a non-negative number")
+            raise ValidationError("budget must be a non-negative number")
 
 def validate_assignment_data(data):
     """Validate assignment data"""
-    required_fields = ['staff_id', 'project_id', 'start_date', 'end_date', 'hours_per_week']
-    for field in required_fields:
-        if field not in data:
-            raise ValueError(f"Missing required field: {field}")
+    validate_required(data, ['staff_id', 'project_id', 'start_date', 'end_date', 'hours_per_week'])
 
     # Check if staff exists
     staff = Staff.query.get(data['staff_id'])
     if not staff:
-        raise ValueError("Invalid staff_id: staff member not found")
+        raise NotFoundError("Staff", data['staff_id'])
 
     # Check if project exists
     project = Project.query.get(data['project_id'])
     if not project:
-        raise ValueError("Invalid project_id: project not found")
+        raise NotFoundError("Project", data['project_id'])
 
     # Date validation
     try:
-        start_date = datetime.fromisoformat(data['start_date'])
-        end_date = datetime.fromisoformat(data['end_date'])
+        start_date = datetime.fromisoformat(data['start_date']).date()
+        end_date = datetime.fromisoformat(data['end_date']).date()
     except ValueError:
-        raise ValueError("Invalid date format")
+        raise ValidationError("Invalid date format")
 
-    if end_date <= start_date:
-        raise ValueError("end_date must be after start_date")
-
-    if not isinstance(data['hours_per_week'], (int, float)) or data['hours_per_week'] <= 0:
-        raise ValueError("hours_per_week must be a positive number")
+    validate_date_range(start_date, end_date, "start_date", "end_date")
+    validate_positive_number(data['hours_per_week'], 'hours_per_week')
 
 # STAFF ENDPOINTS
 
@@ -192,8 +191,7 @@ def create_staff():
     if 'skills' in data:
         staff.set_skills_list(data['skills'])
 
-    db.session.add(staff)
-    db.session.commit()
+    safe_db_operation(lambda: (db.session.add(staff), db.session.commit())[1], "Failed to create staff member")
 
     return jsonify(staff.to_dict()), 201
 
@@ -205,7 +203,7 @@ def get_staff_by_id(staff_id):
 
     staff = Staff.query.get(staff_id)
     if not staff:
-        return jsonify({'error': 'Staff member not found'}), 404
+        raise NotFoundError("Staff", staff_id)
 
     return jsonify(staff.to_dict())
 
@@ -213,9 +211,11 @@ def get_staff_by_id(staff_id):
 @handle_errors
 def update_staff(staff_id):
     """Update a staff member"""
+    db, Staff, Project, Assignment = get_models()
+
     staff = Staff.query.get(staff_id)
     if not staff:
-        return jsonify({'error': 'Staff member not found'}), 404
+        raise NotFoundError("Staff", staff_id)
 
     data = request.get_json()
 
@@ -237,7 +237,7 @@ def update_staff(staff_id):
     if 'skills' in data:
         staff.set_skills_list(data['skills'])
 
-    db.session.commit()
+    safe_db_operation(db.session.commit, "Failed to update staff member")
 
     return jsonify(staff.to_dict())
 
@@ -245,16 +245,17 @@ def update_staff(staff_id):
 @handle_errors
 def delete_staff(staff_id):
     """Delete a staff member"""
+    db, Staff, Project, Assignment = get_models()
+
     staff = Staff.query.get(staff_id)
     if not staff:
-        return jsonify({'error': 'Staff member not found'}), 404
+        raise NotFoundError("Staff", staff_id)
 
     # Check if staff has assignments
     if staff.assignments:
-        return jsonify({'error': 'Cannot delete staff member with active assignments'}), 400
+        raise ConflictError("Cannot delete staff member with active assignments")
 
-    db.session.delete(staff)
-    db.session.commit()
+    safe_db_operation(lambda: (db.session.delete(staff), db.session.commit())[1], "Failed to delete staff member")
 
     return jsonify({'message': 'Staff member deleted successfully'})
 
@@ -308,8 +309,7 @@ def create_project():
         location=data.get('location')
     )
 
-    db.session.add(project)
-    db.session.commit()
+    safe_db_operation(lambda: (db.session.add(project), db.session.commit())[1], "Failed to create project")
 
     return jsonify(project.to_dict()), 201
 
@@ -317,9 +317,11 @@ def create_project():
 @handle_errors
 def get_project_by_id(project_id):
     """Get a specific project by ID"""
+    db, Staff, Project, Assignment = get_models()
+
     project = Project.query.get(project_id)
     if not project:
-        return jsonify({'error': 'Project not found'}), 404
+        raise NotFoundError("Project", project_id)
 
     return jsonify(project.to_dict())
 
@@ -327,9 +329,11 @@ def get_project_by_id(project_id):
 @handle_errors
 def update_project(project_id):
     """Update a project"""
+    db, Staff, Project, Assignment = get_models()
+
     project = Project.query.get(project_id)
     if not project:
-        return jsonify({'error': 'Project not found'}), 404
+        raise NotFoundError("Project", project_id)
 
     data = request.get_json()
 
@@ -351,7 +355,7 @@ def update_project(project_id):
     if 'location' in data:
         project.location = data['location']
 
-    db.session.commit()
+    safe_db_operation(db.session.commit, "Failed to update project")
 
     return jsonify(project.to_dict())
 
@@ -359,16 +363,17 @@ def update_project(project_id):
 @handle_errors
 def delete_project(project_id):
     """Delete a project"""
+    db, Staff, Project, Assignment = get_models()
+
     project = Project.query.get(project_id)
     if not project:
-        return jsonify({'error': 'Project not found'}), 404
+        raise NotFoundError("Project", project_id)
 
     # Check if project has assignments
     if project.assignments:
-        return jsonify({'error': 'Cannot delete project with active assignments'}), 400
+        raise ConflictError("Cannot delete project with active assignments")
 
-    db.session.delete(project)
-    db.session.commit()
+    safe_db_operation(lambda: (db.session.delete(project), db.session.commit())[1], "Failed to delete project")
 
     return jsonify({'message': 'Project deleted successfully'})
 
@@ -417,8 +422,7 @@ def create_assignment():
         role_on_project=data.get('role_on_project')
     )
 
-    db.session.add(assignment)
-    db.session.commit()
+    safe_db_operation(lambda: (db.session.add(assignment), db.session.commit())[1], "Failed to create assignment")
 
     return jsonify(assignment.to_dict()), 201
 
@@ -426,9 +430,11 @@ def create_assignment():
 @handle_errors
 def get_assignment_by_id(assignment_id):
     """Get a specific assignment by ID"""
+    db, Staff, Project, Assignment = get_models()
+
     assignment = Assignment.query.get(assignment_id)
     if not assignment:
-        return jsonify({'error': 'Assignment not found'}), 404
+        raise NotFoundError("Assignment", assignment_id)
 
     return jsonify(assignment.to_dict())
 
@@ -436,9 +442,11 @@ def get_assignment_by_id(assignment_id):
 @handle_errors
 def update_assignment(assignment_id):
     """Update an assignment"""
+    db, Staff, Project, Assignment = get_models()
+
     assignment = Assignment.query.get(assignment_id)
     if not assignment:
-        return jsonify({'error': 'Assignment not found'}), 404
+        raise NotFoundError("Assignment", assignment_id)
 
     data = request.get_json()
 
@@ -452,7 +460,7 @@ def update_assignment(assignment_id):
     assignment.hours_per_week = data['hours_per_week']
     assignment.role_on_project = data.get('role_on_project')
 
-    db.session.commit()
+    safe_db_operation(db.session.commit, "Failed to update assignment")
 
     return jsonify(assignment.to_dict())
 
@@ -464,10 +472,9 @@ def delete_assignment(assignment_id):
 
     assignment = Assignment.query.get(assignment_id)
     if not assignment:
-        return jsonify({'error': 'Assignment not found'}), 404
+        raise NotFoundError("Assignment", assignment_id)
 
-    db.session.delete(assignment)
-    db.session.commit()
+    safe_db_operation(lambda: (db.session.delete(assignment), db.session.commit())[1], "Failed to delete assignment")
 
     return jsonify({'message': 'Assignment deleted successfully'})
 
