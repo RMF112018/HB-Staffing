@@ -1,0 +1,37 @@
+.date-picker .input-field {
+  /* Date inputs have built-in calendar icons */
+  /* Additional styling can be added here if needed */
+}
+
+.date-picker .input-field::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.3s ease;
+}
+
+.date-picker .input-field::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+.date-picker .input-field::-webkit-inner-spin-button,
+.date-picker .input-field::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox */
+.date-picker .input-field::-moz-focus-inner {
+  border: 0;
+}
+
+/* For browsers that don't support date input */
+@supports not (input[type="date"]) {
+  .date-picker .input-field {
+    /* Fallback styling for browsers without date input support */
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpath d='M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'%3e%3c/path%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1rem;
+    padding-right: 2.5rem;
+  }
+}

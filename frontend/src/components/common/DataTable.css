@@ -1,0 +1,226 @@
+.data-table-container {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.data-table-search {
+  padding: 1rem;
+  border-bottom: 1px solid #ecf0f1;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 2px solid #ecf0f1;
+  border-radius: 4px;
+  font-size: 1rem;
+  transition: border-color 0.3s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #3498db;
+}
+
+.data-table-wrapper {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.data-table th {
+  background: #f8f9fa;
+  color: #2c3e50;
+  padding: 1rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid #ecf0f1;
+  position: relative;
+}
+
+.data-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.data-table th.sortable:hover {
+  background: #e9ecef;
+}
+
+.sort-indicator {
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.data-table th.align-center {
+  text-align: center;
+}
+
+.data-table th.align-right {
+  text-align: right;
+}
+
+.data-table td {
+  padding: 1rem 0.75rem;
+  border-bottom: 1px solid #ecf0f1;
+  vertical-align: middle;
+}
+
+.data-table td.align-center {
+  text-align: center;
+}
+
+.data-table td.align-right {
+  text-align: right;
+}
+
+.data-table tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.loading-cell,
+.empty-cell {
+  text-align: center;
+  padding: 3rem;
+  color: #7f8c8d;
+  font-style: italic;
+}
+
+.actions-column {
+  width: 120px;
+  text-align: center;
+}
+
+.actions-cell {
+  text-align: center;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 0.25rem;
+  justify-content: center;
+}
+
+.action-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  font-size: 1rem;
+  transition: background-color 0.3s ease;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-button:hover {
+  background: #ecf0f1;
+}
+
+.view-button:hover {
+  background: #d4edda;
+}
+
+.edit-button:hover {
+  background: #d1ecf1;
+}
+
+.delete-button:hover {
+  background: #f8d7da;
+}
+
+.data-table-footer {
+  padding: 1rem;
+  background: #f8f9fa;
+  border-top: 1px solid #ecf0f1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.data-table-info {
+  color: #6c757d;
+  font-size: 0.875rem;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .data-table-container {
+    margin: 0 -1rem;
+    border-radius: 0;
+  }
+
+  .data-table-search {
+    padding: 0.75rem;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 0.5rem;
+    font-size: 0.8rem;
+  }
+
+  .data-table th {
+    padding: 0.75rem 0.5rem;
+  }
+
+  .actions-column {
+    width: 100px;
+  }
+
+  .action-buttons {
+    gap: 0.125rem;
+  }
+
+  .action-button {
+    width: 28px;
+    height: 28px;
+    font-size: 0.9rem;
+  }
+
+  .data-table-footer {
+    padding: 0.75rem;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: stretch;
+  }
+
+  .data-table-info {
+    text-align: center;
+  }
+}
+
+/* Mobile table adjustments */
+@media (max-width: 576px) {
+  .data-table-wrapper {
+    font-size: 0.8rem;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 0.375rem;
+  }
+
+  .actions-column {
+    width: 80px;
+  }
+
+  .action-button {
+    width: 24px;
+    height: 24px;
+    font-size: 0.8rem;
+  }
+}
