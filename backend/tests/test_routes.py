@@ -10,7 +10,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import create_app
-from models import db, Staff, Project, Assignment, User, Role
+from models import db, Staff, Project, Assignment, User, Role, PlanningExercise, PlanningProject, PlanningRole
 
 
 @pytest.fixture
@@ -51,31 +51,51 @@ def auth_headers(client):
 
 @pytest.fixture
 def test_roles(app):
-    """Create test roles for API testing."""
+    """Get or create test roles for API testing."""
     with app.app_context():
-        role1 = Role(name="Manager", hourly_cost=70.0, description="Project management")
-        role2 = Role(name="Estimator", hourly_cost=60.0, description="Cost estimation")
-        role3 = Role(name="Developer", hourly_cost=55.0, description="Software development")
-        db.session.add(role1)
-        db.session.add(role2)
-        db.session.add(role3)
+        # Check for existing roles first (from seeded database)
+        existing_roles = Role.query.all()
+        
+        if len(existing_roles) >= 3:
+            return {'roles': existing_roles[:3], 'role_ids': [r.id for r in existing_roles[:3]]}
+        
+        # Create roles only if they don't exist
+        roles = []
+        role_data = [
+            {"name": "Test Manager", "hourly_cost": 70.0, "description": "Project management"},
+            {"name": "Test Estimator", "hourly_cost": 60.0, "description": "Cost estimation"},
+            {"name": "Test Developer", "hourly_cost": 55.0, "description": "Software development"}
+        ]
+        
+        for data in role_data:
+            existing = Role.query.filter_by(name=data['name']).first()
+            if existing:
+                roles.append(existing)
+            else:
+                role = Role(name=data['name'], hourly_cost=data['hourly_cost'], description=data['description'])
+                db.session.add(role)
+                db.session.flush()
+                roles.append(role)
+        
         db.session.commit()
-        return {'roles': [role1, role2, role3]}
+        return {'roles': roles, 'role_ids': [r.id for r in roles]}
 
 
 @pytest.fixture
 def test_data(app, test_roles):
     """Create test data for API testing."""
     with app.app_context():
-        # Get the roles
-        manager_role = Role.query.filter_by(name="Manager").first()
-        estimator_role = Role.query.filter_by(name="Estimator").first()
+        # Get roles from the fixture
+        roles = test_roles['roles']
+        role_ids = test_roles['role_ids']
 
-        # Create test staff with role_id
-        staff1 = Staff(name="John Doe", role_id=manager_role.id, hourly_rate=75.0)
-        staff2 = Staff(name="Jane Smith", role_id=estimator_role.id, hourly_rate=65.0)
+        # Create test staff with role_id (using internal_hourly_cost)
+        staff1 = Staff(name="John Doe", role_id=role_ids[0], internal_hourly_cost=75.0)
+        staff2 = Staff(name="Jane Smith", role_id=role_ids[1], internal_hourly_cost=65.0)
         db.session.add(staff1)
         db.session.add(staff2)
+        db.session.flush()
+        staff_ids = [staff1.id, staff2.id]
         db.session.commit()
 
         # Create test projects
@@ -92,25 +112,32 @@ def test_data(app, test_roles):
         )
         db.session.add(project1)
         db.session.add(project2)
+        db.session.flush()
+        project_ids = [project1.id, project2.id]
         db.session.commit()
 
         # Create test assignment
         assignment1 = Assignment(
-            staff_id=staff1.id,
-            project_id=project1.id,
+            staff_id=staff_ids[0],
+            project_id=project_ids[0],
             start_date=date(2024, 1, 1),
             end_date=date(2024, 3, 31),
             hours_per_week=40.0
         )
         db.session.add(assignment1)
-
+        db.session.flush()
+        assignment_ids = [assignment1.id]
         db.session.commit()
 
         return {
             'staff': [staff1, staff2],
+            'staff_ids': staff_ids,
             'projects': [project1, project2],
+            'project_ids': project_ids,
             'assignments': [assignment1],
-            'roles': test_roles['roles']
+            'assignment_ids': assignment_ids,
+            'roles': roles,
+            'role_ids': role_ids
         }
 
 
@@ -548,6 +575,296 @@ class TestForecastingEndpoints:
 
         response = client.post('/api/forecasts/simulate', json=simulation_data, headers=auth_headers)
         assert response.status_code == 200
+
+
+class TestPlanningExerciseEndpoints:
+    """Test planning exercise API endpoints"""
+
+    @pytest.fixture
+    def planning_test_data(self, client, auth_headers, test_roles):
+        """Create planning exercise test data."""
+        with client.application.app_context():
+            # Get role IDs from test_roles fixture
+            role_ids = test_roles['role_ids']
+            
+            return {
+                'manager_role_id': role_ids[0],
+                'estimator_role_id': role_ids[1] if len(role_ids) > 1 else role_ids[0]
+            }
+
+    def test_create_planning_exercise(self, client, auth_headers, planning_test_data):
+        """Test creating a new planning exercise"""
+        exercise_data = {
+            'name': 'Test Planning Exercise',
+            'description': 'Test description for planning',
+            'status': 'draft'
+        }
+
+        response = client.post('/api/planning-exercises', json=exercise_data, headers=auth_headers)
+        assert response.status_code == 201
+
+        data = response.get_json()
+        assert data['name'] == 'Test Planning Exercise'
+        assert data['status'] == 'draft'
+        assert 'id' in data
+
+    def test_get_planning_exercises_list(self, client, auth_headers, planning_test_data):
+        """Test getting list of planning exercises"""
+        # First create an exercise
+        exercise_data = {
+            'name': 'List Test Exercise',
+            'description': 'For listing test',
+            'status': 'active'
+        }
+        client.post('/api/planning-exercises', json=exercise_data, headers=auth_headers)
+
+        response = client.get('/api/planning-exercises', headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert isinstance(data, list)
+
+    def test_get_planning_exercise_by_id(self, client, auth_headers, planning_test_data):
+        """Test getting a specific planning exercise"""
+        # First create an exercise
+        exercise_data = {
+            'name': 'Get By ID Test',
+            'description': 'Test description',
+            'status': 'draft'
+        }
+        create_response = client.post('/api/planning-exercises', json=exercise_data, headers=auth_headers)
+        exercise_id = create_response.get_json()['id']
+
+        response = client.get(f'/api/planning-exercises/{exercise_id}', headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert data['name'] == 'Get By ID Test'
+
+    def test_update_planning_exercise(self, client, auth_headers, planning_test_data):
+        """Test updating a planning exercise"""
+        # First create an exercise
+        exercise_data = {
+            'name': 'Update Test Exercise',
+            'description': 'Original description',
+            'status': 'draft'
+        }
+        create_response = client.post('/api/planning-exercises', json=exercise_data, headers=auth_headers)
+        exercise_id = create_response.get_json()['id']
+
+        # Update it
+        update_data = {
+            'name': 'Updated Exercise Name',
+            'description': 'Updated description',
+            'status': 'active'
+        }
+        response = client.put(f'/api/planning-exercises/{exercise_id}', json=update_data, headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert data['name'] == 'Updated Exercise Name'
+        assert data['status'] == 'active'
+
+    def test_delete_planning_exercise(self, client, auth_headers, planning_test_data):
+        """Test deleting a planning exercise"""
+        # First create an exercise
+        exercise_data = {
+            'name': 'Delete Test Exercise',
+            'description': 'To be deleted',
+            'status': 'draft'
+        }
+        create_response = client.post('/api/planning-exercises', json=exercise_data, headers=auth_headers)
+        exercise_id = create_response.get_json()['id']
+
+        # Delete it
+        response = client.delete(f'/api/planning-exercises/{exercise_id}', headers=auth_headers)
+        assert response.status_code == 200
+
+        # Verify deletion
+        get_response = client.get(f'/api/planning-exercises/{exercise_id}', headers=auth_headers)
+        assert get_response.status_code == 404
+
+    def test_add_project_to_exercise(self, client, auth_headers, planning_test_data):
+        """Test adding a project to a planning exercise"""
+        # Create exercise
+        exercise_data = {'name': 'Project Test Exercise', 'status': 'draft'}
+        create_response = client.post('/api/planning-exercises', json=exercise_data, headers=auth_headers)
+        exercise_id = create_response.get_json()['id']
+
+        # Add project
+        project_data = {
+            'name': 'Test Planning Project',
+            'start_date': '2025-01-01',
+            'duration_months': 12,
+            'budget': 1000000.0
+        }
+        response = client.post(f'/api/planning-exercises/{exercise_id}/projects', json=project_data, headers=auth_headers)
+        assert response.status_code == 201
+
+        data = response.get_json()
+        assert data['name'] == 'Test Planning Project'
+        assert data['duration_months'] == 12
+
+    def test_add_role_to_planning_project(self, client, auth_headers, planning_test_data):
+        """Test adding a role to a planning project"""
+        # Create exercise and project
+        exercise_data = {'name': 'Role Test Exercise', 'status': 'draft'}
+        create_response = client.post('/api/planning-exercises', json=exercise_data, headers=auth_headers)
+        exercise_id = create_response.get_json()['id']
+
+        project_data = {
+            'name': 'Role Test Project',
+            'start_date': '2025-01-01',
+            'duration_months': 12
+        }
+        project_response = client.post(f'/api/planning-exercises/{exercise_id}/projects', json=project_data, headers=auth_headers)
+        project_id = project_response.get_json()['id']
+
+        # Add role
+        role_data = {
+            'role_id': planning_test_data['manager_role_id'],
+            'count': 2,
+            'start_month_offset': 0,
+            'end_month_offset': 0,
+            'allocation_percentage': 100.0,
+            'hours_per_week': 40.0,
+            'overlap_mode': 'efficient'
+        }
+        response = client.post(f'/api/planning-projects/{project_id}/roles', json=role_data, headers=auth_headers)
+        assert response.status_code == 201
+
+        data = response.get_json()
+        assert data['count'] == 2
+        assert data['allocation_percentage'] == 100.0
+
+    def test_analyze_planning_exercise(self, client, auth_headers, planning_test_data):
+        """Test analyzing a planning exercise"""
+        # Create full exercise with project and roles
+        exercise_data = {'name': 'Analysis Test Exercise', 'status': 'active'}
+        create_response = client.post('/api/planning-exercises', json=exercise_data, headers=auth_headers)
+        exercise_id = create_response.get_json()['id']
+
+        project_data = {
+            'name': 'Analysis Test Project',
+            'start_date': '2025-01-01',
+            'duration_months': 12,
+            'budget': 500000.0
+        }
+        project_response = client.post(f'/api/planning-exercises/{exercise_id}/projects', json=project_data, headers=auth_headers)
+        project_id = project_response.get_json()['id']
+
+        role_data = {
+            'role_id': planning_test_data['manager_role_id'],
+            'count': 1,
+            'start_month_offset': 0,
+            'end_month_offset': 0,
+            'allocation_percentage': 100.0,
+            'hours_per_week': 40.0,
+            'overlap_mode': 'efficient'
+        }
+        client.post(f'/api/planning-projects/{project_id}/roles', json=role_data, headers=auth_headers)
+
+        # Analyze (endpoint is /analysis, not /analyze)
+        response = client.get(f'/api/planning-exercises/{exercise_id}/analysis', headers=auth_headers)
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert 'coverage' in data or 'role_coverage' in data or 'summary' in data
+
+    def test_get_planning_exercise_not_found(self, client, auth_headers):
+        """Test getting non-existent planning exercise"""
+        response = client.get('/api/planning-exercises/99999', headers=auth_headers)
+        assert response.status_code == 404
+
+
+class TestStaffAvailabilityEndpoints:
+    """Test staff availability forecast endpoints"""
+
+    def test_get_staff_availability(self, client, auth_headers, test_data):
+        """Test getting staff availability forecast"""
+        response = client.get(
+            '/api/forecasts/staff-availability?start_date=2025-01-01&end_date=2025-06-30',
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert 'available' in data or 'summary' in data
+
+    def test_get_staff_availability_by_role(self, client, auth_headers, test_data):
+        """Test getting staff availability filtered by role"""
+        with client.application.app_context():
+            role = Role.query.first()
+            role_id = role.id
+
+        response = client.get(
+            f'/api/forecasts/staff-availability?role_id={role_id}&start_date=2025-01-01&end_date=2025-06-30',
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+
+
+class TestStaffSuggestionsEndpoints:
+    """Test staff suggestion endpoints"""
+
+    def test_get_staff_suggestions(self, client, auth_headers, test_data):
+        """Test getting staff suggestions for a role"""
+        with client.application.app_context():
+            role = Role.query.first()
+            role_id = role.id
+
+        # Endpoint is /forecasts/suggestions (not /forecasts/staff-suggestions)
+        response = client.get(
+            f'/api/forecasts/suggestions?role_id={role_id}&start_date=2025-01-01&end_date=2025-06-30',
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert 'suggestions' in data or 'role' in data
+
+
+class TestOverAllocationEndpoints:
+    """Test over-allocation detection endpoints"""
+
+    def test_check_staff_over_allocation(self, client, auth_headers, test_data):
+        """Test checking over-allocation for a staff member"""
+        with client.application.app_context():
+            staff = Staff.query.first()
+            staff_id = staff.id
+
+        # Endpoint is /allocation-conflicts (not /over-allocations)
+        response = client.get(
+            f'/api/staff/{staff_id}/allocation-conflicts?start_date=2024-01-01&end_date=2024-12-31',
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert 'has_conflicts' in data or 'timeline' in data
+
+    def test_validate_assignment_allocation(self, client, auth_headers, test_data):
+        """Test validating an assignment for over-allocation"""
+        with client.application.app_context():
+            staff = Staff.query.first()
+            staff_id = staff.id
+
+        validation_data = {
+            'staff_id': staff_id,
+            'start_date': '2025-01-01',
+            'end_date': '2025-06-30',
+            'allocation_percentage': 100.0
+        }
+
+        response = client.post(
+            '/api/assignments/validate-allocation',
+            json=validation_data,
+            headers=auth_headers
+        )
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert 'is_valid' in data or 'conflicts' in data
 
 
 if __name__ == '__main__':

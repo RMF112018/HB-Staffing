@@ -311,6 +311,7 @@ class Assignment(db.Model):
     # Allocation fields
     allocation_type = db.Column(db.String(30), nullable=False, default='full')
     allocation_percentage = db.Column(db.Float, nullable=False, default=100.0)  # Used for percentage_total type
+    allow_over_allocation = db.Column(db.Boolean, default=False)  # Override to allow over-allocation
     
     created_at = db.Column(db.DateTime, default=utc_now)
     updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
@@ -319,7 +320,7 @@ class Assignment(db.Model):
     monthly_allocations = db.relationship('AssignmentMonthlyAllocation', backref='assignment', lazy=True, cascade='all, delete-orphan')
 
     def __init__(self, staff_id, project_id, start_date, end_date, hours_per_week=40.0, role_on_project=None,
-                 allocation_type='full', allocation_percentage=100.0):
+                 allocation_type='full', allocation_percentage=100.0, allow_over_allocation=False):
         self.staff_id = staff_id
         self.project_id = project_id
         self.start_date = start_date
@@ -328,6 +329,7 @@ class Assignment(db.Model):
         self.role_on_project = role_on_project or ''
         self.allocation_type = allocation_type
         self.allocation_percentage = allocation_percentage
+        self.allow_over_allocation = allow_over_allocation
 
     def to_dict(self, include_monthly_allocations=False):
         """Convert assignment to dictionary"""
@@ -344,6 +346,7 @@ class Assignment(db.Model):
             'allocation_type': self.allocation_type,
             'allocation_percentage': self.allocation_percentage,
             'effective_allocation': self.effective_allocation,
+            'allow_over_allocation': self.allow_over_allocation,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             # Include related data
@@ -789,6 +792,223 @@ class GhostStaff(db.Model):
             'is_replaced': self.is_replaced,
             'replaced_by_staff_id': self.replaced_by_staff_id,
             'replaced_by_staff_name': self.replaced_by.name if self.replaced_by else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+# =============================================================================
+# PLANNING EXERCISE MODELS
+# =============================================================================
+
+class PlanningExercise(db.Model):
+    """Multi-project planning exercise for staffing analysis"""
+    __tablename__ = 'planning_exercises'
+    
+    # Status constants
+    STATUS_DRAFT = 'draft'
+    STATUS_ACTIVE = 'active'
+    STATUS_COMPLETED = 'completed'
+    STATUS_ARCHIVED = 'archived'
+    
+    STATUSES = [STATUS_DRAFT, STATUS_ACTIVE, STATUS_COMPLETED, STATUS_ARCHIVED]
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(20), nullable=False, default='draft')
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+    
+    # Relationships
+    planning_projects = db.relationship('PlanningProject', backref='exercise', lazy=True, cascade='all, delete-orphan')
+    creator = db.relationship('User', backref='planning_exercises', lazy=True)
+    
+    def __init__(self, name, description=None, status='draft', created_by=None):
+        self.name = name
+        self.description = description
+        self.status = status
+        self.created_by = created_by
+    
+    def to_dict(self, include_projects=True):
+        """Convert planning exercise to dictionary"""
+        data = {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'status': self.status,
+            'created_by': self.created_by,
+            'creator_name': self.creator.username if self.creator else None,
+            'project_count': len(self.planning_projects) if self.planning_projects else 0,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+        
+        if include_projects and self.planning_projects:
+            data['projects'] = [p.to_dict(include_roles=True) for p in self.planning_projects]
+        
+        return data
+    
+    @property
+    def total_duration_months(self):
+        """Calculate total duration spanning all projects"""
+        if not self.planning_projects:
+            return 0
+        
+        min_start = None
+        max_end = None
+        
+        for project in self.planning_projects:
+            if project.start_date:
+                if min_start is None or project.start_date < min_start:
+                    min_start = project.start_date
+            if project.calculated_end_date:
+                if max_end is None or project.calculated_end_date > max_end:
+                    max_end = project.calculated_end_date
+        
+        if min_start and max_end:
+            from dateutil.relativedelta import relativedelta
+            delta = relativedelta(max_end, min_start)
+            return delta.years * 12 + delta.months + 1
+        return 0
+
+
+class PlanningProject(db.Model):
+    """Project within a planning exercise"""
+    __tablename__ = 'planning_projects'
+
+    id = db.Column(db.Integer, primary_key=True)
+    exercise_id = db.Column(db.Integer, db.ForeignKey('planning_exercises.id'), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    start_date = db.Column(db.Date, nullable=False)
+    duration_months = db.Column(db.Integer, nullable=False, default=12)
+    location = db.Column(db.String(200), nullable=True)
+    budget = db.Column(db.Float, nullable=True)
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+    
+    # Relationships
+    planning_roles = db.relationship('PlanningRole', backref='planning_project', lazy=True, cascade='all, delete-orphan')
+    
+    def __init__(self, exercise_id, name, start_date, duration_months=12, location=None, budget=None):
+        self.exercise_id = exercise_id
+        self.name = name
+        self.start_date = start_date
+        self.duration_months = duration_months
+        self.location = location
+        self.budget = budget
+    
+    @property
+    def calculated_end_date(self):
+        """Calculate end date based on start date and duration"""
+        if self.start_date and self.duration_months:
+            from dateutil.relativedelta import relativedelta
+            return self.start_date + relativedelta(months=self.duration_months)
+        return None
+    
+    def to_dict(self, include_roles=True):
+        """Convert planning project to dictionary"""
+        data = {
+            'id': self.id,
+            'exercise_id': self.exercise_id,
+            'name': self.name,
+            'start_date': self.start_date.isoformat() if self.start_date else None,
+            'duration_months': self.duration_months,
+            'end_date': self.calculated_end_date.isoformat() if self.calculated_end_date else None,
+            'location': self.location,
+            'budget': self.budget,
+            'role_count': len(self.planning_roles) if self.planning_roles else 0,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+        
+        if include_roles and self.planning_roles:
+            data['roles'] = [r.to_dict() for r in self.planning_roles]
+        
+        return data
+
+
+class PlanningRole(db.Model):
+    """Role requirement within a planning project"""
+    __tablename__ = 'planning_roles'
+    
+    # Overlap mode constants
+    OVERLAP_EFFICIENT = 'efficient'
+    OVERLAP_CONSERVATIVE = 'conservative'
+    
+    OVERLAP_MODES = [OVERLAP_EFFICIENT, OVERLAP_CONSERVATIVE]
+
+    id = db.Column(db.Integer, primary_key=True)
+    planning_project_id = db.Column(db.Integer, db.ForeignKey('planning_projects.id'), nullable=False)
+    role_id = db.Column(db.Integer, db.ForeignKey('roles.id'), nullable=False)
+    count = db.Column(db.Integer, nullable=False, default=1)
+    start_month_offset = db.Column(db.Integer, nullable=False, default=0)  # Can be negative (pre-construction)
+    end_month_offset = db.Column(db.Integer, nullable=True)  # Relative to project end, can be positive (close-out)
+    allocation_percentage = db.Column(db.Float, nullable=False, default=100.0)
+    hours_per_week = db.Column(db.Float, nullable=False, default=40.0)
+    overlap_mode = db.Column(db.String(20), nullable=False, default='efficient')  # 'efficient' or 'conservative'
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+    
+    # Relationships
+    role = db.relationship('Role', backref='planning_roles', lazy=True)
+    
+    def __init__(self, planning_project_id, role_id, count=1, start_month_offset=0, end_month_offset=None,
+                 allocation_percentage=100.0, hours_per_week=40.0, overlap_mode='efficient'):
+        self.planning_project_id = planning_project_id
+        self.role_id = role_id
+        self.count = count
+        self.start_month_offset = start_month_offset
+        self.end_month_offset = end_month_offset
+        self.allocation_percentage = allocation_percentage
+        self.hours_per_week = hours_per_week
+        self.overlap_mode = overlap_mode
+    
+    @property
+    def calculated_start_date(self):
+        """Calculate actual start date based on project start and offset"""
+        if self.planning_project and self.planning_project.start_date:
+            from dateutil.relativedelta import relativedelta
+            return self.planning_project.start_date + relativedelta(months=self.start_month_offset)
+        return None
+    
+    @property
+    def calculated_end_date(self):
+        """Calculate actual end date based on project end and offset"""
+        if self.planning_project and self.planning_project.calculated_end_date:
+            from dateutil.relativedelta import relativedelta
+            offset = self.end_month_offset if self.end_month_offset is not None else 0
+            return self.planning_project.calculated_end_date + relativedelta(months=offset)
+        return None
+    
+    @property
+    def duration_months(self):
+        """Calculate duration in months"""
+        if self.calculated_start_date and self.calculated_end_date:
+            from dateutil.relativedelta import relativedelta
+            delta = relativedelta(self.calculated_end_date, self.calculated_start_date)
+            return delta.years * 12 + delta.months
+        return 0
+    
+    def to_dict(self):
+        """Convert planning role to dictionary"""
+        return {
+            'id': self.id,
+            'planning_project_id': self.planning_project_id,
+            'role_id': self.role_id,
+            'role_name': self.role.name if self.role else None,
+            'role_hourly_cost': self.role.hourly_cost if self.role else None,
+            'role_default_billable_rate': self.role.default_billable_rate if self.role else None,
+            'count': self.count,
+            'start_month_offset': self.start_month_offset,
+            'end_month_offset': self.end_month_offset,
+            'allocation_percentage': self.allocation_percentage,
+            'hours_per_week': self.hours_per_week,
+            'overlap_mode': self.overlap_mode,
+            'calculated_start_date': self.calculated_start_date.isoformat() if self.calculated_start_date else None,
+            'calculated_end_date': self.calculated_end_date.isoformat() if self.calculated_end_date else None,
+            'duration_months': self.duration_months,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

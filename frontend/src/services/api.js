@@ -174,6 +174,20 @@ export const forecastAPI = {
   getOrganization: (params) => api.get('/forecasts/organization', { params }),
   simulate: (data) => api.post('/forecasts/simulate', data),
   getGaps: (params) => api.get('/forecasts/gaps', { params }),
+  // Staff availability forecast
+  getStaffAvailability: (params) => api.get('/forecasts/staff-availability', { params }),
+  // Staff suggestions for a role
+  getSuggestions: (params) => api.get('/forecasts/suggestions', { params }),
+  // New hire needs analysis
+  getNewHireNeeds: (params) => api.get('/forecasts/new-hire-needs', { params }),
+  // Organization-wide over-allocations
+  getOrganizationOverAllocations: (params) => api.get('/organization/over-allocations', { params }),
+  // Validate assignment allocation
+  validateAllocation: (data) => api.post('/assignments/validate-allocation', data),
+  // Staff allocation conflicts
+  getStaffAllocationConflicts: (staffId, params) => api.get(`/staff/${staffId}/allocation-conflicts`, { params }),
+  // Staff allocation timeline
+  getStaffAllocationTimeline: (staffId, params) => api.get(`/staff/${staffId}/allocation-timeline`, { params }),
 };
 
 export const capacityAPI = {
@@ -205,4 +219,33 @@ export const ghostStaffAPI = {
 export const reportsAPI = {
   // Get staff planning report for a project or project folder
   getStaffPlanningReport: (params) => api.get('/reports/staff-planning', { params }),
+};
+
+export const planningAPI = {
+  // Planning Exercise CRUD
+  getAll: (params) => api.get('/planning-exercises', { params }),
+  getById: (id) => api.get(`/planning-exercises/${id}`),
+  create: (data) => api.post('/planning-exercises', data),
+  update: (id, data) => api.put(`/planning-exercises/${id}`, data),
+  delete: (id) => api.delete(`/planning-exercises/${id}`),
+  
+  // Planning Projects
+  addProject: (exerciseId, data) => api.post(`/planning-exercises/${exerciseId}/projects`, data),
+  updateProject: (projectId, data) => api.put(`/planning-projects/${projectId}`, data),
+  deleteProject: (projectId) => api.delete(`/planning-projects/${projectId}`),
+  
+  // Planning Roles
+  addRole: (projectId, data) => api.post(`/planning-projects/${projectId}/roles`, data),
+  updateRole: (roleId, data) => api.put(`/planning-roles/${roleId}`, data),
+  deleteRole: (roleId) => api.delete(`/planning-roles/${roleId}`),
+  
+  // Analysis endpoints
+  getAnalysis: (exerciseId) => api.get(`/planning-exercises/${exerciseId}/analysis`),
+  getStaffRequirements: (exerciseId, overlapMode = 'efficient') => 
+    api.get(`/planning-exercises/${exerciseId}/staff-requirements`, { params: { overlap_mode: overlapMode } }),
+  getCosts: (exerciseId) => api.get(`/planning-exercises/${exerciseId}/costs`),
+  
+  // Apply exercise to create real projects
+  apply: (exerciseId, preview = false) => 
+    api.post(`/planning-exercises/${exerciseId}/apply`, { preview }),
 };

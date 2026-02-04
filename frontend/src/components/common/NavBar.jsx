@@ -17,6 +17,7 @@ const NavBar = () => {
           <li><Link to="/projects" style={{ color: 'white', textDecoration: 'none' }}>Projects</Link></li>
           <li><Link to="/assignments" style={{ color: 'white', textDecoration: 'none' }}>Assignments</Link></li>
           <li><Link to="/forecasts" style={{ color: 'white', textDecoration: 'none' }}>Forecasts</Link></li>
+          <li><Link to="/planning" style={{ color: 'white', textDecoration: 'none' }}>Planning</Link></li>
           <li><Link to="/reports" style={{ color: 'white', textDecoration: 'none' }}>Reports</Link></li>
         </ul>
       </div>

@@ -1668,3 +1668,698 @@ def get_staff_planning_report():
         return jsonify(report)
     except ValueError as e:
         raise ValidationError(str(e))
+
+
+# =============================================================================
+# STAFF AVAILABILITY AND SUGGESTION ENDPOINTS
+# =============================================================================
+
+@api.route('/forecasts/staff-availability', methods=['GET'])
+@handle_errors
+def get_staff_availability():
+    """
+    Get staff availability forecast for a given role and date range.
+    
+    Query Parameters:
+        role_id (optional): Filter by role ID
+        start_date (optional): Start date (YYYY-MM-DD), defaults to today
+        end_date (optional): End date (YYYY-MM-DD), defaults to 90 days from start
+    """
+    from engine import get_staff_availability_forecast
+    
+    role_id = request.args.get('role_id', type=int)
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    # Parse dates
+    parsed_start = None
+    parsed_end = None
+    
+    if start_date:
+        try:
+            parsed_start = datetime.fromisoformat(start_date).date()
+        except ValueError:
+            raise ValidationError(f"Invalid start_date format: {start_date}. Use YYYY-MM-DD")
+    
+    if end_date:
+        try:
+            parsed_end = datetime.fromisoformat(end_date).date()
+        except ValueError:
+            raise ValidationError(f"Invalid end_date format: {end_date}. Use YYYY-MM-DD")
+    
+    result = get_staff_availability_forecast(
+        role_id=role_id,
+        start_date=parsed_start,
+        end_date=parsed_end
+    )
+    return jsonify(result)
+
+
+@api.route('/forecasts/suggestions', methods=['GET'])
+@handle_errors
+def get_staff_suggestions():
+    """
+    Get staff suggestions for a role based on availability and assignment alignment.
+    
+    Query Parameters:
+        role_id (required): ID of the role to fill
+        start_date (required): Start date of the role (YYYY-MM-DD)
+        end_date (required): End date of the role (YYYY-MM-DD)
+        allocation_percentage (optional): Required allocation (default 100)
+        max_suggestions (optional): Maximum suggestions to return (default 10)
+    """
+    from engine import suggest_staff_for_role
+    
+    role_id = request.args.get('role_id', type=int)
+    if not role_id:
+        raise ValidationError("role_id parameter is required")
+    
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    if not start_date or not end_date:
+        raise ValidationError("start_date and end_date parameters are required")
+    
+    try:
+        parsed_start = datetime.fromisoformat(start_date).date()
+        parsed_end = datetime.fromisoformat(end_date).date()
+    except ValueError:
+        raise ValidationError("Invalid date format. Use YYYY-MM-DD")
+    
+    allocation_percentage = request.args.get('allocation_percentage', type=float, default=100.0)
+    max_suggestions = request.args.get('max_suggestions', type=int, default=10)
+    
+    try:
+        result = suggest_staff_for_role(
+            role_id=role_id,
+            start_date=parsed_start,
+            end_date=parsed_end,
+            allocation_percentage=allocation_percentage,
+            max_suggestions=max_suggestions
+        )
+        return jsonify(result)
+    except ValueError as e:
+        raise ValidationError(str(e))
+
+
+@api.route('/forecasts/new-hire-needs', methods=['GET'])
+@handle_errors
+def get_new_hire_needs():
+    """
+    Identify positions requiring new hires.
+    
+    Query Parameters:
+        role_id (required): ID of the role to check
+        start_date (required): Start date of the requirement (YYYY-MM-DD)
+        end_date (required): End date of the requirement (YYYY-MM-DD)
+        required_count (optional): Number of staff needed (default 1)
+        allocation_percentage (optional): Required allocation per person (default 100)
+    """
+    from engine import flag_new_hire_needs
+    
+    role_id = request.args.get('role_id', type=int)
+    if not role_id:
+        raise ValidationError("role_id parameter is required")
+    
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    if not start_date or not end_date:
+        raise ValidationError("start_date and end_date parameters are required")
+    
+    try:
+        parsed_start = datetime.fromisoformat(start_date).date()
+        parsed_end = datetime.fromisoformat(end_date).date()
+    except ValueError:
+        raise ValidationError("Invalid date format. Use YYYY-MM-DD")
+    
+    required_count = request.args.get('required_count', type=int, default=1)
+    allocation_percentage = request.args.get('allocation_percentage', type=float, default=100.0)
+    
+    try:
+        result = flag_new_hire_needs(
+            role_id=role_id,
+            start_date=parsed_start,
+            end_date=parsed_end,
+            required_count=required_count,
+            allocation_percentage=allocation_percentage
+        )
+        return jsonify(result)
+    except ValueError as e:
+        raise ValidationError(str(e))
+
+
+# =============================================================================
+# OVER-ALLOCATION DETECTION ENDPOINTS
+# =============================================================================
+
+@api.route('/staff/<int:staff_id>/allocation-conflicts', methods=['GET'])
+@handle_errors
+def get_staff_allocation_conflicts(staff_id):
+    """
+    Detect over-allocation conflicts for a staff member.
+    
+    Query Parameters:
+        start_date (required): Start date (YYYY-MM-DD)
+        end_date (required): End date (YYYY-MM-DD)
+    """
+    from engine import detect_over_allocations
+    
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    if not start_date or not end_date:
+        raise ValidationError("start_date and end_date parameters are required")
+    
+    try:
+        parsed_start = datetime.fromisoformat(start_date).date()
+        parsed_end = datetime.fromisoformat(end_date).date()
+    except ValueError:
+        raise ValidationError("Invalid date format. Use YYYY-MM-DD")
+    
+    try:
+        result = detect_over_allocations(staff_id, parsed_start, parsed_end)
+        return jsonify(result)
+    except ValueError as e:
+        raise ValidationError(str(e))
+
+
+@api.route('/staff/<int:staff_id>/allocation-timeline', methods=['GET'])
+@handle_errors
+def get_staff_allocation_timeline(staff_id):
+    """
+    Get detailed monthly allocation timeline for a staff member.
+    
+    Query Parameters:
+        start_date (required): Start date (YYYY-MM-DD)
+        end_date (required): End date (YYYY-MM-DD)
+    """
+    from engine import get_staff_allocation_timeline as get_timeline
+    
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    if not start_date or not end_date:
+        raise ValidationError("start_date and end_date parameters are required")
+    
+    try:
+        parsed_start = datetime.fromisoformat(start_date).date()
+        parsed_end = datetime.fromisoformat(end_date).date()
+    except ValueError:
+        raise ValidationError("Invalid date format. Use YYYY-MM-DD")
+    
+    try:
+        result = get_timeline(staff_id, parsed_start, parsed_end)
+        return jsonify(result)
+    except ValueError as e:
+        raise ValidationError(str(e))
+
+
+@api.route('/organization/over-allocations', methods=['GET'])
+@handle_errors
+def get_organization_over_allocations_endpoint():
+    """
+    Get organization-wide over-allocation summary.
+    
+    Query Parameters:
+        start_date (required): Start date (YYYY-MM-DD)
+        end_date (required): End date (YYYY-MM-DD)
+    """
+    from engine import get_organization_over_allocations
+    
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    if not start_date or not end_date:
+        raise ValidationError("start_date and end_date parameters are required")
+    
+    try:
+        parsed_start = datetime.fromisoformat(start_date).date()
+        parsed_end = datetime.fromisoformat(end_date).date()
+    except ValueError:
+        raise ValidationError("Invalid date format. Use YYYY-MM-DD")
+    
+    result = get_organization_over_allocations(parsed_start, parsed_end)
+    return jsonify(result)
+
+
+@api.route('/assignments/validate-allocation', methods=['POST'])
+@handle_errors
+def validate_assignment_allocation_endpoint():
+    """
+    Pre-validate a proposed assignment for over-allocation conflicts.
+    
+    Request Body:
+        staff_id (required): ID of the staff member
+        start_date (required): Proposed start date (YYYY-MM-DD)
+        end_date (required): Proposed end date (YYYY-MM-DD)
+        allocation_percentage (required): Proposed allocation percentage
+        exclude_assignment_id (optional): Assignment ID to exclude (for updates)
+    """
+    from engine import validate_assignment_allocation
+    
+    data = request.get_json()
+    
+    validate_required(data, ['staff_id', 'start_date', 'end_date', 'allocation_percentage'])
+    
+    try:
+        result = validate_assignment_allocation(
+            staff_id=data['staff_id'],
+            new_start_date=data['start_date'],
+            new_end_date=data['end_date'],
+            new_allocation_percentage=data['allocation_percentage'],
+            exclude_assignment_id=data.get('exclude_assignment_id')
+        )
+        return jsonify(result)
+    except ValueError as e:
+        raise ValidationError(str(e))
+
+
+# =============================================================================
+# PLANNING EXERCISE ENDPOINTS
+# =============================================================================
+
+def get_planning_models():
+    """Import planning-related models"""
+    from db import db
+    from models import PlanningExercise, PlanningProject, PlanningRole, Role
+    return db, PlanningExercise, PlanningProject, PlanningRole, Role
+
+
+@api.route('/planning-exercises', methods=['GET'])
+@handle_errors
+def get_planning_exercises():
+    """Get all planning exercises with optional filtering"""
+    db, PlanningExercise, PlanningProject, PlanningRole, Role = get_planning_models()
+    
+    status = request.args.get('status')
+    include_projects = request.args.get('include_projects', 'true').lower() == 'true'
+    
+    query = PlanningExercise.query
+    
+    if status:
+        query = query.filter(PlanningExercise.status == status)
+    
+    exercises = query.order_by(PlanningExercise.updated_at.desc()).all()
+    
+    return jsonify([e.to_dict(include_projects=include_projects) for e in exercises])
+
+
+@api.route('/planning-exercises', methods=['POST'])
+@handle_errors
+def create_planning_exercise():
+    """Create a new planning exercise with optional projects"""
+    db, PlanningExercise, PlanningProject, PlanningRole, Role = get_planning_models()
+    
+    data = request.get_json()
+    
+    validate_required(data, ['name'])
+    
+    # Validate status if provided
+    if 'status' in data and data['status'] not in PlanningExercise.STATUSES:
+        raise ValidationError(f"Invalid status. Must be one of: {', '.join(PlanningExercise.STATUSES)}")
+    
+    exercise = PlanningExercise(
+        name=data['name'],
+        description=data.get('description'),
+        status=data.get('status', 'draft'),
+        created_by=data.get('created_by')
+    )
+    
+    safe_db_operation(lambda: (db.session.add(exercise), db.session.commit())[1], "Failed to create planning exercise")
+    
+    # Create projects if provided
+    if 'projects' in data and data['projects']:
+        for project_data in data['projects']:
+            validate_required(project_data, ['name', 'start_date', 'duration_months'])
+            
+            # Parse start date
+            try:
+                start_date = datetime.fromisoformat(project_data['start_date']).date()
+            except ValueError:
+                raise ValidationError(f"Invalid start_date format: {project_data['start_date']}")
+            
+            planning_project = PlanningProject(
+                exercise_id=exercise.id,
+                name=project_data['name'],
+                start_date=start_date,
+                duration_months=project_data['duration_months'],
+                location=project_data.get('location'),
+                budget=project_data.get('budget')
+            )
+            db.session.add(planning_project)
+            db.session.flush()  # Get project ID for roles
+            
+            # Create roles if provided
+            if 'roles' in project_data and project_data['roles']:
+                for role_data in project_data['roles']:
+                    validate_required(role_data, ['role_id', 'count'])
+                    
+                    # Validate role exists
+                    role = db.session.get(Role, role_data['role_id'])
+                    if not role:
+                        raise NotFoundError("Role", role_data['role_id'])
+                    
+                    # Validate overlap_mode if provided
+                    overlap_mode = role_data.get('overlap_mode', 'efficient')
+                    if overlap_mode not in PlanningRole.OVERLAP_MODES:
+                        raise ValidationError(f"Invalid overlap_mode. Must be one of: {', '.join(PlanningRole.OVERLAP_MODES)}")
+                    
+                    planning_role = PlanningRole(
+                        planning_project_id=planning_project.id,
+                        role_id=role_data['role_id'],
+                        count=role_data['count'],
+                        start_month_offset=role_data.get('start_month_offset', 0),
+                        end_month_offset=role_data.get('end_month_offset'),
+                        allocation_percentage=role_data.get('allocation_percentage', 100.0),
+                        hours_per_week=role_data.get('hours_per_week', 40.0),
+                        overlap_mode=overlap_mode
+                    )
+                    db.session.add(planning_role)
+        
+        safe_db_operation(db.session.commit, "Failed to create planning projects and roles")
+    
+    return jsonify(exercise.to_dict(include_projects=True)), 201
+
+
+@api.route('/planning-exercises/<int:exercise_id>', methods=['GET'])
+@handle_errors
+def get_planning_exercise(exercise_id):
+    """Get a specific planning exercise by ID"""
+    db, PlanningExercise, PlanningProject, PlanningRole, Role = get_planning_models()
+    
+    exercise = db.session.get(PlanningExercise, exercise_id)
+    if not exercise:
+        raise NotFoundError("PlanningExercise", exercise_id)
+    
+    return jsonify(exercise.to_dict(include_projects=True))
+
+
+@api.route('/planning-exercises/<int:exercise_id>', methods=['PUT'])
+@handle_errors
+def update_planning_exercise(exercise_id):
+    """Update a planning exercise"""
+    db, PlanningExercise, PlanningProject, PlanningRole, Role = get_planning_models()
+    
+    exercise = db.session.get(PlanningExercise, exercise_id)
+    if not exercise:
+        raise NotFoundError("PlanningExercise", exercise_id)
+    
+    data = request.get_json()
+    
+    # Update basic fields
+    if 'name' in data:
+        exercise.name = data['name']
+    if 'description' in data:
+        exercise.description = data['description']
+    if 'status' in data:
+        if data['status'] not in PlanningExercise.STATUSES:
+            raise ValidationError(f"Invalid status. Must be one of: {', '.join(PlanningExercise.STATUSES)}")
+        exercise.status = data['status']
+    
+    safe_db_operation(db.session.commit, "Failed to update planning exercise")
+    
+    return jsonify(exercise.to_dict(include_projects=True))
+
+
+@api.route('/planning-exercises/<int:exercise_id>', methods=['DELETE'])
+@handle_errors
+def delete_planning_exercise(exercise_id):
+    """Delete a planning exercise"""
+    db, PlanningExercise, PlanningProject, PlanningRole, Role = get_planning_models()
+    
+    exercise = db.session.get(PlanningExercise, exercise_id)
+    if not exercise:
+        raise NotFoundError("PlanningExercise", exercise_id)
+    
+    safe_db_operation(lambda: (db.session.delete(exercise), db.session.commit())[1], "Failed to delete planning exercise")
+    
+    return jsonify({'message': 'Planning exercise deleted successfully'})
+
+
+# Planning Project endpoints
+
+@api.route('/planning-exercises/<int:exercise_id>/projects', methods=['POST'])
+@handle_errors
+def create_planning_project(exercise_id):
+    """Add a project to a planning exercise"""
+    db, PlanningExercise, PlanningProject, PlanningRole, Role = get_planning_models()
+    
+    exercise = db.session.get(PlanningExercise, exercise_id)
+    if not exercise:
+        raise NotFoundError("PlanningExercise", exercise_id)
+    
+    data = request.get_json()
+    validate_required(data, ['name', 'start_date', 'duration_months'])
+    
+    # Parse start date
+    try:
+        start_date = datetime.fromisoformat(data['start_date']).date()
+    except ValueError:
+        raise ValidationError(f"Invalid start_date format: {data['start_date']}")
+    
+    planning_project = PlanningProject(
+        exercise_id=exercise_id,
+        name=data['name'],
+        start_date=start_date,
+        duration_months=data['duration_months'],
+        location=data.get('location'),
+        budget=data.get('budget')
+    )
+    
+    safe_db_operation(lambda: (db.session.add(planning_project), db.session.commit())[1], "Failed to create planning project")
+    
+    # Create roles if provided
+    if 'roles' in data and data['roles']:
+        for role_data in data['roles']:
+            validate_required(role_data, ['role_id', 'count'])
+            
+            role = db.session.get(Role, role_data['role_id'])
+            if not role:
+                raise NotFoundError("Role", role_data['role_id'])
+            
+            overlap_mode = role_data.get('overlap_mode', 'efficient')
+            if overlap_mode not in PlanningRole.OVERLAP_MODES:
+                raise ValidationError(f"Invalid overlap_mode. Must be one of: {', '.join(PlanningRole.OVERLAP_MODES)}")
+            
+            planning_role = PlanningRole(
+                planning_project_id=planning_project.id,
+                role_id=role_data['role_id'],
+                count=role_data['count'],
+                start_month_offset=role_data.get('start_month_offset', 0),
+                end_month_offset=role_data.get('end_month_offset'),
+                allocation_percentage=role_data.get('allocation_percentage', 100.0),
+                hours_per_week=role_data.get('hours_per_week', 40.0),
+                overlap_mode=overlap_mode
+            )
+            db.session.add(planning_role)
+        
+        safe_db_operation(db.session.commit, "Failed to create planning roles")
+    
+    return jsonify(planning_project.to_dict(include_roles=True)), 201
+
+
+@api.route('/planning-projects/<int:project_id>', methods=['PUT'])
+@handle_errors
+def update_planning_project(project_id):
+    """Update a planning project"""
+    db, PlanningExercise, PlanningProject, PlanningRole, Role = get_planning_models()
+    
+    planning_project = db.session.get(PlanningProject, project_id)
+    if not planning_project:
+        raise NotFoundError("PlanningProject", project_id)
+    
+    data = request.get_json()
+    
+    # Update fields
+    if 'name' in data:
+        planning_project.name = data['name']
+    if 'start_date' in data:
+        try:
+            planning_project.start_date = datetime.fromisoformat(data['start_date']).date()
+        except ValueError:
+            raise ValidationError(f"Invalid start_date format: {data['start_date']}")
+    if 'duration_months' in data:
+        planning_project.duration_months = data['duration_months']
+    if 'location' in data:
+        planning_project.location = data['location']
+    if 'budget' in data:
+        planning_project.budget = data['budget']
+    
+    safe_db_operation(db.session.commit, "Failed to update planning project")
+    
+    return jsonify(planning_project.to_dict(include_roles=True))
+
+
+@api.route('/planning-projects/<int:project_id>', methods=['DELETE'])
+@handle_errors
+def delete_planning_project(project_id):
+    """Delete a planning project"""
+    db, PlanningExercise, PlanningProject, PlanningRole, Role = get_planning_models()
+    
+    planning_project = db.session.get(PlanningProject, project_id)
+    if not planning_project:
+        raise NotFoundError("PlanningProject", project_id)
+    
+    safe_db_operation(lambda: (db.session.delete(planning_project), db.session.commit())[1], "Failed to delete planning project")
+    
+    return jsonify({'message': 'Planning project deleted successfully'})
+
+
+# Planning Role endpoints
+
+@api.route('/planning-projects/<int:project_id>/roles', methods=['POST'])
+@handle_errors
+def create_planning_role(project_id):
+    """Add a role to a planning project"""
+    db, PlanningExercise, PlanningProject, PlanningRole, Role = get_planning_models()
+    
+    planning_project = db.session.get(PlanningProject, project_id)
+    if not planning_project:
+        raise NotFoundError("PlanningProject", project_id)
+    
+    data = request.get_json()
+    validate_required(data, ['role_id', 'count'])
+    
+    role = db.session.get(Role, data['role_id'])
+    if not role:
+        raise NotFoundError("Role", data['role_id'])
+    
+    overlap_mode = data.get('overlap_mode', 'efficient')
+    if overlap_mode not in PlanningRole.OVERLAP_MODES:
+        raise ValidationError(f"Invalid overlap_mode. Must be one of: {', '.join(PlanningRole.OVERLAP_MODES)}")
+    
+    planning_role = PlanningRole(
+        planning_project_id=project_id,
+        role_id=data['role_id'],
+        count=data['count'],
+        start_month_offset=data.get('start_month_offset', 0),
+        end_month_offset=data.get('end_month_offset'),
+        allocation_percentage=data.get('allocation_percentage', 100.0),
+        hours_per_week=data.get('hours_per_week', 40.0),
+        overlap_mode=overlap_mode
+    )
+    
+    safe_db_operation(lambda: (db.session.add(planning_role), db.session.commit())[1], "Failed to create planning role")
+    
+    return jsonify(planning_role.to_dict()), 201
+
+
+@api.route('/planning-roles/<int:role_id>', methods=['PUT'])
+@handle_errors
+def update_planning_role(role_id):
+    """Update a planning role"""
+    db, PlanningExercise, PlanningProject, PlanningRole, Role = get_planning_models()
+    
+    planning_role = db.session.get(PlanningRole, role_id)
+    if not planning_role:
+        raise NotFoundError("PlanningRole", role_id)
+    
+    data = request.get_json()
+    
+    # Update fields
+    if 'role_id' in data:
+        role = db.session.get(Role, data['role_id'])
+        if not role:
+            raise NotFoundError("Role", data['role_id'])
+        planning_role.role_id = data['role_id']
+    if 'count' in data:
+        planning_role.count = data['count']
+    if 'start_month_offset' in data:
+        planning_role.start_month_offset = data['start_month_offset']
+    if 'end_month_offset' in data:
+        planning_role.end_month_offset = data['end_month_offset']
+    if 'allocation_percentage' in data:
+        planning_role.allocation_percentage = data['allocation_percentage']
+    if 'hours_per_week' in data:
+        planning_role.hours_per_week = data['hours_per_week']
+    if 'overlap_mode' in data:
+        if data['overlap_mode'] not in PlanningRole.OVERLAP_MODES:
+            raise ValidationError(f"Invalid overlap_mode. Must be one of: {', '.join(PlanningRole.OVERLAP_MODES)}")
+        planning_role.overlap_mode = data['overlap_mode']
+    
+    safe_db_operation(db.session.commit, "Failed to update planning role")
+    
+    return jsonify(planning_role.to_dict())
+
+
+@api.route('/planning-roles/<int:role_id>', methods=['DELETE'])
+@handle_errors
+def delete_planning_role(role_id):
+    """Delete a planning role"""
+    db, PlanningExercise, PlanningProject, PlanningRole, Role = get_planning_models()
+    
+    planning_role = db.session.get(PlanningRole, role_id)
+    if not planning_role:
+        raise NotFoundError("PlanningRole", role_id)
+    
+    safe_db_operation(lambda: (db.session.delete(planning_role), db.session.commit())[1], "Failed to delete planning role")
+    
+    return jsonify({'message': 'Planning role deleted successfully'})
+
+
+# Planning Analysis endpoints
+
+@api.route('/planning-exercises/<int:exercise_id>/analysis', methods=['GET'])
+@handle_errors
+def get_planning_analysis(exercise_id):
+    """Get full coverage analysis for a planning exercise"""
+    from engine import generate_coverage_analysis
+    
+    try:
+        result = generate_coverage_analysis(exercise_id)
+        return jsonify(result)
+    except ValueError as e:
+        raise ValidationError(str(e))
+
+
+@api.route('/planning-exercises/<int:exercise_id>/staff-requirements', methods=['GET'])
+@handle_errors
+def get_planning_staff_requirements(exercise_id):
+    """Get minimum staff requirements per role for a planning exercise"""
+    from engine import calculate_minimum_staff_per_role
+    
+    overlap_mode = request.args.get('overlap_mode', 'efficient')
+    
+    if overlap_mode not in ['efficient', 'conservative']:
+        raise ValidationError("overlap_mode must be 'efficient' or 'conservative'")
+    
+    try:
+        result = calculate_minimum_staff_per_role(exercise_id, overlap_mode)
+        return jsonify(result)
+    except ValueError as e:
+        raise ValidationError(str(e))
+
+
+@api.route('/planning-exercises/<int:exercise_id>/costs', methods=['GET'])
+@handle_errors
+def get_planning_costs(exercise_id):
+    """Get cost and margin breakdown for a planning exercise"""
+    from engine import calculate_planning_costs
+    
+    try:
+        result = calculate_planning_costs(exercise_id)
+        return jsonify(result)
+    except ValueError as e:
+        raise ValidationError(str(e))
+
+
+@api.route('/planning-exercises/<int:exercise_id>/apply', methods=['POST'])
+@handle_errors
+def apply_planning_exercise_endpoint(exercise_id):
+    """
+    Apply a planning exercise by creating real projects and ghost staff.
+    
+    Request Body:
+        preview (optional): If true, only return preview without creating (default false)
+    """
+    from engine import apply_planning_exercise
+    
+    data = request.get_json() or {}
+    preview = data.get('preview', False)
+    
+    try:
+        result = apply_planning_exercise(exercise_id, create_real_projects=not preview)
+        return jsonify(result), 201 if not preview else 200
+    except ValueError as e:
+        raise ValidationError(str(e))

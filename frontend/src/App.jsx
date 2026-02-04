@@ -18,6 +18,9 @@ import TemplateList from './components/TemplateList';
 import TemplateForm from './components/TemplateForm';
 import Forecasts from './components/Forecasts';
 import Reports from './components/Reports';
+import PlanningExerciseList from './components/PlanningExerciseList';
+import PlanningExerciseForm from './components/PlanningExerciseForm';
+import PlanningAnalysis from './components/PlanningAnalysis';
 
 // Common components
 import NavBar from './components/common/NavBar';
@@ -55,6 +58,10 @@ function App() {
                 <Route path="/assignments/:id/edit" element={<AssignmentForm />} />
                 <Route path="/forecasts" element={<Forecasts />} />
                 <Route path="/reports" element={<Reports />} />
+                <Route path="/planning" element={<PlanningExerciseList />} />
+                <Route path="/planning/new" element={<PlanningExerciseForm />} />
+                <Route path="/planning/:id" element={<PlanningAnalysis />} />
+                <Route path="/planning/:id/edit" element={<PlanningExerciseForm />} />
               </Routes>
             </main>
           </div>

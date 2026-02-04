@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { assignmentAPI, staffAPI, projectAPI } from '../services/api';
+import { assignmentAPI, staffAPI, projectAPI, forecastAPI } from '../services/api';
 import { useApiError } from '../hooks/useApiError';
 import { validateAssignmentForm } from '../utils/validation';
 import './AssignmentForm.css';
@@ -37,6 +37,21 @@ const generateMonthRange = (startDate, endDate) => {
   return months;
 };
 
+// Debounce helper
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
 const AssignmentForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -51,7 +66,8 @@ const AssignmentForm = () => {
     hours_per_week: '40',
     role_on_project: '',
     allocation_type: 'full',
-    allocation_percentage: '100'
+    allocation_percentage: '100',
+    allow_over_allocation: false
   });
   const [monthlyAllocations, setMonthlyAllocations] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -62,6 +78,17 @@ const AssignmentForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingRoles, setIsLoadingRoles] = useState(false);
+  
+  // Over-allocation state
+  const [allocationValidation, setAllocationValidation] = useState(null);
+  const [isCheckingAllocation, setIsCheckingAllocation] = useState(false);
+
+  // Debounced values for allocation check
+  const debouncedStaffId = useDebounce(formData.staff_id, 300);
+  const debouncedStartDate = useDebounce(formData.start_date, 300);
+  const debouncedEndDate = useDebounce(formData.end_date, 300);
+  const debouncedAllocationPercentage = useDebounce(formData.allocation_percentage, 300);
+  const debouncedAllocationType = useDebounce(formData.allocation_type, 300);
 
   useEffect(() => {
     loadOptions();
@@ -96,6 +123,48 @@ const AssignmentForm = () => {
       });
     }
   }, [formData.start_date, formData.end_date, formData.allocation_type]);
+
+  // Check for over-allocation when relevant fields change
+  useEffect(() => {
+    if (debouncedStaffId && debouncedStartDate && debouncedEndDate) {
+      checkAllocationConflicts();
+    } else {
+      setAllocationValidation(null);
+    }
+  }, [debouncedStaffId, debouncedStartDate, debouncedEndDate, debouncedAllocationPercentage, debouncedAllocationType]);
+
+  const checkAllocationConflicts = async () => {
+    if (!formData.staff_id || !formData.start_date || !formData.end_date) {
+      return;
+    }
+
+    setIsCheckingAllocation(true);
+    try {
+      // Determine allocation percentage based on type
+      let allocationPct = parseFloat(formData.allocation_percentage) || 100;
+      if (formData.allocation_type === 'full') {
+        allocationPct = 100;
+      } else if (formData.allocation_type === 'split_by_projects') {
+        // For split, estimate based on current setting
+        allocationPct = parseFloat(formData.allocation_percentage) || 50;
+      }
+
+      const response = await forecastAPI.validateAllocation({
+        staff_id: parseInt(formData.staff_id),
+        start_date: formData.start_date,
+        end_date: formData.end_date,
+        allocation_percentage: allocationPct,
+        exclude_assignment_id: isEditing ? parseInt(id) : null
+      });
+      
+      setAllocationValidation(response.data);
+    } catch (err) {
+      console.error('Failed to validate allocation:', err);
+      setAllocationValidation(null);
+    } finally {
+      setIsCheckingAllocation(false);
+    }
+  };
 
   const loadOptions = async () => {
     try {
@@ -142,7 +211,8 @@ const AssignmentForm = () => {
         hours_per_week: assignment.hours_per_week?.toString() || '40',
         role_on_project: assignment.role_on_project || '',
         allocation_type: assignment.allocation_type || 'full',
-        allocation_percentage: assignment.allocation_percentage?.toString() || '100'
+        allocation_percentage: assignment.allocation_percentage?.toString() || '100',
+        allow_over_allocation: assignment.allow_over_allocation || false
       });
       
       // Load monthly allocations if type is percentage_monthly
@@ -159,11 +229,14 @@ const AssignmentForm = () => {
   };
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
+    const newValue = type === 'checkbox' ? checked : value;
+    
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: newValue
     }));
+    
     // Clear validation error when field changes
     if (validationErrors[name]) {
       setValidationErrors(prev => ({
@@ -202,6 +275,15 @@ const AssignmentForm = () => {
       return;
     }
 
+    // Check for over-allocation warning
+    if (allocationValidation && !allocationValidation.is_valid && !formData.allow_over_allocation) {
+      setValidationErrors({
+        ...validationErrors,
+        allocation: 'Please enable over-allocation override or adjust the dates/allocation to resolve conflicts.'
+      });
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -213,7 +295,8 @@ const AssignmentForm = () => {
         hours_per_week: parseFloat(formData.hours_per_week),
         role_on_project: formData.role_on_project || null,
         allocation_type: formData.allocation_type,
-        allocation_percentage: parseFloat(formData.allocation_percentage)
+        allocation_percentage: parseFloat(formData.allocation_percentage),
+        allow_over_allocation: formData.allow_over_allocation
       };
 
       // Include monthly allocations if type is percentage_monthly
@@ -273,6 +356,12 @@ const AssignmentForm = () => {
     if (!formData.role_on_project || projectRoles.length === 0) return null;
     const role = projectRoles.find(r => r.role_name === formData.role_on_project);
     return role?.billable_rate;
+  };
+
+  // Get the selected staff member's name
+  const getSelectedStaffName = () => {
+    const staff = staffList.find(s => s.id.toString() === formData.staff_id);
+    return staff?.name || 'staff member';
   };
 
   if (isLoading) {
@@ -521,6 +610,85 @@ const AssignmentForm = () => {
                 </table>
               )}
             </div>
+          )}
+
+          {/* Over-Allocation Warning */}
+          {isCheckingAllocation && (
+            <div className="allocation-check-loading">
+              Checking allocation conflicts...
+            </div>
+          )}
+
+          {allocationValidation && !allocationValidation.is_valid && !isCheckingAllocation && (
+            <div className="over-allocation-warning">
+              <div className="warning-header">
+                <span className="warning-icon">⚠️</span>
+                <h4>Over-Allocation Warning</h4>
+              </div>
+              <p className="warning-message">
+                This assignment would cause <strong>{getSelectedStaffName()}</strong> to exceed 100% allocation 
+                in <strong>{allocationValidation.conflict_count}</strong> month(s).
+              </p>
+              
+              <div className="conflict-details">
+                <h5>Conflicts:</h5>
+                <ul className="conflict-list">
+                  {allocationValidation.conflicts.slice(0, 5).map((conflict, idx) => (
+                    <li key={idx} className="conflict-item">
+                      <span className="month">{conflict.month}</span>
+                      <span className="allocation">
+                        {conflict.existing_allocation.toFixed(0)}% existing + {conflict.new_allocation}% new 
+                        = <strong>{conflict.projected_total.toFixed(0)}%</strong>
+                      </span>
+                      <span className="over-by">(+{conflict.over_allocation_amount.toFixed(0)}% over)</span>
+                    </li>
+                  ))}
+                  {allocationValidation.conflicts.length > 5 && (
+                    <li className="more-conflicts">
+                      ... and {allocationValidation.conflicts.length - 5} more month(s)
+                    </li>
+                  )}
+                </ul>
+              </div>
+
+              {allocationValidation.conflicts[0]?.existing_assignments?.length > 0 && (
+                <div className="existing-assignments-info">
+                  <h5>Existing Assignments:</h5>
+                  <ul>
+                    {allocationValidation.conflicts[0].existing_assignments.map((a, idx) => (
+                      <li key={idx}>
+                        {a.project_name} ({a.allocation_percentage}%)
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="override-option">
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    name="allow_over_allocation"
+                    checked={formData.allow_over_allocation}
+                    onChange={handleChange}
+                  />
+                  <span className="checkbox-text">
+                    I understand and want to allow this over-allocation
+                  </span>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {allocationValidation && allocationValidation.is_valid && !isCheckingAllocation && formData.staff_id && (
+            <div className="allocation-ok">
+              <span className="ok-icon">✅</span>
+              <span>No allocation conflicts detected</span>
+            </div>
+          )}
+
+          {validationErrors.allocation && (
+            <span className="field-error">{validationErrors.allocation}</span>
           )}
         </div>
 
